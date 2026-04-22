@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>NosCore.PacketLogger.Hook</RootNamespace>
+    <AssemblyName>NosCore.PacketLogger.Hook</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- NativeAOT: emit a real x86 native DLL, no CLR required at load time. -->
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+    <PlatformTarget>x86</PlatformTarget>
+
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <StackTraceSupport>false</StackTraceSupport>
+    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
+    <!-- ModuleInitializer IS the right tool here: runs on DLL load. -->
+    <NoWarn>$(NoWarn);CA2255</NoWarn>
+  </PropertyGroup>
+
+</Project>

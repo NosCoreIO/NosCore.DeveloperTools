@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>CS1591</NoWarn>
+    <Company>NosCore</Company>
+    <Authors>NosCore - ChickenAPI</Authors>
+    <Product>NosCore.PacketLogger</Product>
+    <Copyright>Copyright (c) NosCore contributors</Copyright>
+    <NeutralLanguage>en</NeutralLanguage>
+    <AssemblyVersion>0.0.1.0</AssemblyVersion>
+    <FileVersion>0.0.1.0</FileVersion>
+    <Version>0.0.1</Version>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,73 @@
+name: .NET
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish single-file exe
+        run: >
+          dotnet publish src/NosCore.PacketLogger/NosCore.PacketLogger.csproj
+          -c Release -r win-x86 --self-contained
+          -p:PublishSingleFile=true
+          -o ./publish
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NosCore.PacketLogger-win-x86
+          path: publish/NosCore.PacketLogger.exe
+          if-no-files-found: error
+
+  release:
+    name: Release on master
+    needs: build
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish single-file exe
+        run: >
+          dotnet publish src/NosCore.PacketLogger/NosCore.PacketLogger.csproj
+          -c Release -r win-x86 --self-contained
+          -p:PublishSingleFile=true
+          -o ./publish
+
+      - name: Compute version tag
+        id: ver
+        shell: bash
+        run: |
+          SHORT=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          DATE=$(date -u +%Y%m%d-%H%M)
+          echo "tag=ci-${DATE}-${SHORT}" >> "$GITHUB_OUTPUT"
+
+      - name: Create rolling release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          files: publish/NosCore.PacketLogger.exe
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

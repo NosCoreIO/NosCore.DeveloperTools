@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>NosCore.PacketLogger</RootNamespace>
+    <AssemblyName>NosCore.PacketLogger</AssemblyName>
+    <ApplicationIcon>Resources\logger.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyTitle>NosCore.PacketLogger</AssemblyTitle>
+    <Description>NosTale packet logger for NosCore.</Description>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- NosTale client is 32-bit; match that bitness for same-arch injection. -->
+    <PlatformTarget>x86</PlatformTarget>
+  </PropertyGroup>
+
+  <PropertyGroup Label="PublishSingleFile" Condition="'$(Configuration)'=='Release'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <PublishReadyToRun>false</PublishReadyToRun>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NosCore.Packets" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="app.manifest">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
+    <EmbeddedResource Include="Resources\logger.ico" LogicalName="NosCore.PacketLogger.logger.ico" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <HookProjectPath>$(MSBuildThisFileDirectory)..\NosCore.PacketLogger.Hook\NosCore.PacketLogger.Hook.csproj</HookProjectPath>
+    <HookPublishDir>$(MSBuildThisFileDirectory)..\NosCore.PacketLogger.Hook\bin\$(Configuration)\net10.0\win-x86\publish\</HookPublishDir>
+    <HookDllPath>$(HookPublishDir)NosCore.PacketLogger.Hook.dll</HookDllPath>
+  </PropertyGroup>
+
+  <Target Name="BuildHookPayload" BeforeTargets="BeforeBuild">
+    <Message Importance="high" Text="Publishing NosCore.PacketLogger.Hook (NativeAOT x86)..." />
+    <!-- NativeAOT's ILC shells out to vswhere.exe; prepend the VS Installer dir so the shell finds it even when PATH isn't pre-configured. -->
+    <Exec Command="set &quot;PATH=$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer;%PATH%&quot; &amp;&amp; dotnet publish &quot;$(HookProjectPath)&quot; -c $(Configuration) -r win-x86 --nologo -v quiet" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(HookDllPath)" LogicalName="NosCore.PacketLogger.Hook.dll" Visible="false" />
+    </ItemGroup>
+  </Target>
+
+</Project>

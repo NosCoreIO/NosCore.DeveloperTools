@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="NosCore.Packets" Version="16.9.0" />
+    <PackageVersion Include="NosCore.Shared" Version="6.0.0" />
+  </ItemGroup>
+</Project>
