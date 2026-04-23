@@ -17,6 +17,7 @@ namespace NosCore.DeveloperTools.Hook;
 ///
 /// Inbound protocol:
 ///   INJECT &lt;S|R&gt; &lt;W|L&gt; &lt;raw packet text&gt;
+///   NOSMALLURL                         # scan heap, reply with NOSMALLURL &lt;url&gt;
 /// </summary>
 internal static class PipeServer
 {
@@ -103,6 +104,12 @@ internal static class PipeServer
 
     private static void HandleCommand(string line)
     {
+        if (line.StartsWith("NOSMALLURL", StringComparison.Ordinal))
+        {
+            HandleNosMallUrl();
+            return;
+        }
+
         // "INJECT <S|R> <W|L> <payload>" — 11 chars minimum before payload.
         if (!line.StartsWith("INJECT ", StringComparison.Ordinal) || line.Length < 12) return;
 
@@ -142,6 +149,14 @@ internal static class PipeServer
         {
             Announce($"inject error: {ex.Message}");
         }
+    }
+
+    private static void HandleNosMallUrl()
+    {
+        // Offload to a ThreadPool worker — the pipe reader thread must not
+        // block on a full-heap scan, and any AV during the scan must not
+        // take down the pipe.
+        Hooks.TriggerNosMallRescan();
     }
 
     private static void FlushDrops(NamedPipeServerStream pipe)

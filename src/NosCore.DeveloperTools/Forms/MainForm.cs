@@ -261,6 +261,11 @@ public sealed class MainForm : Form
         var urlBox = new TextBox { Dock = DockStyle.Fill, Text = nm.NewUrl };
         var browseSource = new Button { Text = "Browse…", AutoSize = true };
         var patchButton = new Button { Text = "Patch all", AutoSize = true };
+        var liveUrlBox = new TextBox
+        {
+            Dock = DockStyle.Fill, ReadOnly = true,
+            PlaceholderText = "Auto-fills when you open NosMall in-game (requires Hook DLL injected)",
+        };
         var logBox = new TextBox
         {
             Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
@@ -278,7 +283,13 @@ public sealed class MainForm : Form
         btnRow.Controls.Add(patchButton);
         layout.Controls.Add(btnRow, 0, 2);
         layout.SetColumnSpan(btnRow, 3);
-        layout.Controls.Add(logBox, 0, 3);
+
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.Controls.Add(new Label { Text = "Live URL:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 3);
+        layout.Controls.Add(liveUrlBox, 1, 3);
+        layout.SetColumnSpan(liveUrlBox, 2);
+        layout.RowCount += 1;
+        layout.Controls.Add(logBox, 0, 4);
         layout.SetColumnSpan(logBox, 3);
 
         void PersistNm()
@@ -362,6 +373,8 @@ public sealed class MainForm : Form
             Log("");
             Log($"Done. Patched {totalFiles}/{files.Length} archive(s). Original copies kept with .old suffix.");
         };
+
+        _injection.NosMallUrlReceived += (_, url) => BeginInvoke(() => liveUrlBox.Text = url);
 
         page.Controls.Add(layout);
         return page;

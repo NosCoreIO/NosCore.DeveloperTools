@@ -64,6 +64,7 @@ internal static unsafe class HookEntry
             var result = Hooks.Install();
             PipeServer.Announce(
                 $"hooks: send={Fmt(result.SendAddress, result.SendHooked)} recv={Fmt(result.RecvAddress, result.RecvHooked)} login-recv={Fmt(result.LoginRecvAddress, result.LoginRecvHooked)}");
+            Hooks.StartNosMallPoller();
         }
         catch (Exception ex)
         {

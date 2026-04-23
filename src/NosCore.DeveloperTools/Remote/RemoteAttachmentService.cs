@@ -20,6 +20,8 @@ public sealed class RemoteAttachmentService : IInjectionService
 
     public event EventHandler<string>? StatusChanged;
 
+    public event EventHandler<string>? NosMallUrlReceived;
+
     public bool IsAttached => _process is not null;
 
     public int? AttachedProcessId => _process?.ProcessId;
@@ -87,6 +89,12 @@ public sealed class RemoteAttachmentService : IInjectionService
         return _session.SendCommand($"INJECT {d} {c} {payload}");
     }
 
+    public bool RequestNosMallUrl()
+    {
+        if (_session is null) return false;
+        return _session.SendCommand("NOSMALLURL");
+    }
+
     public async Task DetachAsync()
     {
         await DetachInternalAsync();
@@ -127,6 +135,11 @@ public sealed class RemoteAttachmentService : IInjectionService
 
     private void OnPipeLine(string line)
     {
+        if (line.StartsWith("NOSMALLURL ", StringComparison.Ordinal))
+        {
+            NosMallUrlReceived?.Invoke(this, line[11..]);
+            return;
+        }
         if (line.StartsWith("STATUS ", StringComparison.Ordinal))
         {
             RaiseStatus(line[7..]);

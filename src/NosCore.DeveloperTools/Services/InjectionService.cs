@@ -18,6 +18,8 @@ public interface IInjectionService : IDisposable
 
     event EventHandler<string>? StatusChanged;
 
+    event EventHandler<string>? NosMallUrlReceived;
+
     bool IsAttached { get; }
 
     int? AttachedProcessId { get; }
@@ -32,4 +34,12 @@ public interface IInjectionService : IDisposable
     /// direction/connection combo isn't yet supported on the hook side.
     /// </summary>
     bool InjectPacket(PacketDirection direction, PacketConnection connection, string payload);
+
+    /// <summary>
+    /// Ask the injected hook to scan the client's heap for the
+    /// already-formatted NosMall URL. Result arrives asynchronously via
+    /// <see cref="NosMallUrlReceived"/>. Returns true if the request was
+    /// sent (a pipe session is active); false otherwise.
+    /// </summary>
+    bool RequestNosMallUrl();
 }

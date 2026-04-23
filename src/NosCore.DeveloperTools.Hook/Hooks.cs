@@ -88,6 +88,49 @@ internal static unsafe class Hooks
         Capture(PacketDirection.Send, PacketConnection.World, edx);
     }
 
+    private static volatile string? _lastPublishedNosMallUrl;
+    private static int _nosMallPollerStarted;
+
+    /// <summary>
+    /// Start a background thread that periodically scans the heap for the
+    /// NosMall URL. First time the formatted URL shows up (user opens
+    /// NosMall in-game), it publishes a NOSMALLURL line over the pipe.
+    /// No-ops after install if called again.
+    /// </summary>
+    public static void StartNosMallPoller()
+    {
+        if (Interlocked.Exchange(ref _nosMallPollerStarted, 1) != 0) return;
+        var thread = new Thread(NosMallPollLoop) { IsBackground = true, Name = "NosMallPoll" };
+        thread.Start();
+    }
+
+    public static void TriggerNosMallRescan() => ThreadPool.QueueUserWorkItem(_ => PublishNosMallUrlIfNew());
+
+    private static void NosMallPollLoop()
+    {
+        while (true)
+        {
+            try
+            {
+                PublishNosMallUrlIfNew();
+            }
+            catch
+            {
+                // Never throw out of the poller — the target would crash.
+            }
+            Thread.Sleep(2000);
+        }
+    }
+
+    private static void PublishNosMallUrlIfNew()
+    {
+        var url = HeapScanner.FindNosMallUrl();
+        if (string.IsNullOrEmpty(url)) return;
+        if (url == _lastPublishedNosMallUrl) return;
+        _lastPublishedNosMallUrl = url;
+        Queue.Enqueue(new CapturedPacket(PacketDirection.Status, PacketConnection.World, "NOSMALLURL " + url));
+    }
+
     /// <summary>
     /// Attempt to inject <paramref name="packet"/> as if the client
     /// itself were sending it. Requires that a real world-send has
