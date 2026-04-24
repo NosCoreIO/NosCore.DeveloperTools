@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using NosCore.DeveloperTools.Models;
 using NosCore.DeveloperTools.Remote;
@@ -16,6 +17,11 @@ public sealed class MainForm : Form
 
     private readonly ToolStripStatusLabel _statusLabel = new() { Text = "No process attached." };
     private readonly ListBox _logListBox = new();
+    // High packet rates mean per-packet BeginInvoke + ListBox.Add would saturate the UI thread.
+    // Capture threads enqueue here; a UI-thread timer drains the queue in one BeginUpdate/EndUpdate batch.
+    private readonly ConcurrentQueue<LoggedPacket> _pendingPackets = new();
+    private readonly System.Windows.Forms.Timer _flushTimer = new() { Interval = 50 };
+    private const int LogCap = 5000;
     private readonly CheckBox _captureSendBox = new() { Text = "Capture Send", AutoSize = true };
     private readonly CheckBox _captureRecvBox = new() { Text = "Capture Recv", AutoSize = true };
     private readonly Button _clearButton = new() { Text = "Clear", AutoSize = true };
@@ -813,8 +819,12 @@ public sealed class MainForm : Form
 
     private void WireEvents()
     {
-        _log.PacketLogged += (_, packet) => BeginInvoke(() => AppendLog(packet));
-        _log.Cleared += (_, _) => BeginInvoke(() => _logListBox.Items.Clear());
+        _log.PacketLogged += (_, packet) => _pendingPackets.Enqueue(packet);
+        _log.Cleared += (_, _) => BeginInvoke(() =>
+        {
+            while (_pendingPackets.TryDequeue(out _)) { }
+            _logListBox.Items.Clear();
+        });
 
         _injection.PacketCaptured += (_, args) =>
         {
@@ -824,8 +834,12 @@ public sealed class MainForm : Form
         };
         _injection.StatusChanged += (_, msg) => BeginInvoke(() => _statusLabel.Text = msg);
 
+        _flushTimer.Tick += (_, _) => FlushPendingPackets();
+        _flushTimer.Start();
+
         FormClosing += (_, _) =>
         {
+            _flushTimer.Stop();
             _settings.MainWindow.Width = Size.Width;
             _settings.MainWindow.Height = Size.Height;
             _settings.MainWindow.X = Location.X;
@@ -834,14 +848,34 @@ public sealed class MainForm : Form
         };
     }
 
-    private void AppendLog(LoggedPacket packet)
+    private void FlushPendingPackets()
     {
-        _logListBox.Items.Add(packet);
-        if (_logListBox.Items.Count > 5000)
+        if (_pendingPackets.IsEmpty) return;
+
+        // Snapshot the queue to a local array so the batch add runs in a single
+        // BeginUpdate/EndUpdate block even if more packets arrive during the drain.
+        var buffer = new List<LoggedPacket>();
+        while (_pendingPackets.TryDequeue(out var p))
         {
-            _logListBox.Items.RemoveAt(0);
+            buffer.Add(p);
         }
-        _logListBox.TopIndex = Math.Max(0, _logListBox.Items.Count - 1);
+        if (buffer.Count == 0) return;
+
+        _logListBox.BeginUpdate();
+        try
+        {
+            _logListBox.Items.AddRange(buffer.ToArray());
+            var excess = _logListBox.Items.Count - LogCap;
+            for (var i = 0; i < excess; i++)
+            {
+                _logListBox.Items.RemoveAt(0);
+            }
+            _logListBox.TopIndex = Math.Max(0, _logListBox.Items.Count - 1);
+        }
+        finally
+        {
+            _logListBox.EndUpdate();
+        }
     }
 
     private ContextMenuStrip BuildLogContextMenu()
@@ -883,9 +917,17 @@ public sealed class MainForm : Form
 
     private void SelectAllLog()
     {
-        for (var i = 0; i < _logListBox.Items.Count; i++)
+        _logListBox.BeginUpdate();
+        try
         {
-            _logListBox.SetSelected(i, true);
+            for (var i = 0; i < _logListBox.Items.Count; i++)
+            {
+                _logListBox.SetSelected(i, true);
+            }
+        }
+        finally
+        {
+            _logListBox.EndUpdate();
         }
     }
 

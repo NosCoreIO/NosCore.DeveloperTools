@@ -19,11 +19,15 @@ public sealed record LoggedPacket(
     string Header,
     string Raw)
 {
-    /// <summary>Full line with timestamp + tags. Used as the ListBox DisplayString.</summary>
-    public override string ToString()
+    private readonly string _display = FormatDisplay(Timestamp, Connection, Direction, Raw);
+
+    public override string ToString() => _display;
+
+    private static string FormatDisplay(DateTime ts, PacketConnection conn, PacketDirection dir, string raw)
     {
-        var conn = Connection == PacketConnection.Login ? "Login" : "World";
-        var dir = Direction == PacketDirection.Send ? "Send" : "Recv";
-        return $"[{Timestamp:HH:mm:ss.fff}] [{conn}] [{dir}] {Raw}";
+        var c = conn == PacketConnection.Login ? "Login" : "World";
+        // [Client] = originated on the game client (client→server); [Server] = originated on the server (server→client).
+        var source = dir == PacketDirection.Send ? "Client" : "Server";
+        return $"[{ts:HH:mm:ss.fff}] [{c}] [{source}] {raw}";
     }
 }
