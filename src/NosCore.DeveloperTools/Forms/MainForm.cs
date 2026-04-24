@@ -19,6 +19,14 @@ public sealed class MainForm : Form
     private readonly ToolStripStatusLabel _statusLabel = new() { Text = "No process attached." };
     private readonly ListBox _logListBox = new();
     private readonly ListBox _issuesListBox = new();
+    private readonly TextBox _failedHeadersBox = new()
+    {
+        Dock = DockStyle.Top,
+        ReadOnly = true,
+        Multiline = false,
+        PlaceholderText = "Packet headers that have failed validation (cleared with the log).",
+    };
+    private readonly SortedSet<string> _failedHeaders = new(StringComparer.Ordinal);
     // High packet rates mean per-packet BeginInvoke + ListBox.Add would saturate the UI thread.
     // Capture threads enqueue here; a UI-thread timer drains the queue in one BeginUpdate/EndUpdate batch.
     private readonly ConcurrentQueue<LoggedPacket> _pendingPackets = new();
@@ -156,7 +164,7 @@ public sealed class MainForm : Form
         _issuesListBox.HorizontalScrollbar = true;
         _issuesListBox.SelectionMode = SelectionMode.MultiExtended;
         _issuesListBox.KeyDown += OnListKeyDown;
-        _issuesListBox.ContextMenuStrip = BuildListContextMenu(_issuesListBox);
+        _issuesListBox.ContextMenuStrip = BuildListContextMenu(_issuesListBox, includeRawCopy: false);
 
         var toolbar = new FlowLayoutPanel
         {
@@ -178,12 +186,7 @@ public sealed class MainForm : Form
             _settings.PacketFilters.CaptureReceive = _captureRecvBox.Checked;
             Persist();
         };
-        _clearButton.Click += (_, _) =>
-        {
-            _log.Clear();
-            while (_pendingIssues.TryDequeue(out _)) { }
-            _issuesListBox.Items.Clear();
-        };
+        _clearButton.Click += (_, _) => _log.Clear();
         _filtersButton.Click += (_, _) => OpenFilters();
 
         toolbar.Controls.Add(_captureSendBox);
@@ -198,7 +201,9 @@ public sealed class MainForm : Form
         var logPage = new TabPage("Log");
         logPage.Controls.Add(_logListBox);
         var issuesPage = new TabPage("Issues");
+        // Fill must be added before the docked Top control so it occupies the remaining space.
         issuesPage.Controls.Add(_issuesListBox);
+        issuesPage.Controls.Add(_failedHeadersBox);
         subTabs.TabPages.Add(logPage);
         subTabs.TabPages.Add(issuesPage);
 
@@ -857,7 +862,11 @@ public sealed class MainForm : Form
         _log.Cleared += (_, _) => BeginInvoke(() =>
         {
             while (_pendingPackets.TryDequeue(out _)) { }
+            while (_pendingIssues.TryDequeue(out _)) { }
             _logListBox.Items.Clear();
+            _issuesListBox.Items.Clear();
+            _failedHeaders.Clear();
+            _failedHeadersBox.Text = string.Empty;
         });
 
         _injection.PacketCaptured += (_, args) =>
@@ -892,7 +901,50 @@ public sealed class MainForm : Form
     private void FlushPendingPackets()
     {
         FlushQueueInto(_pendingPackets, _logListBox, LogCap);
-        FlushQueueInto(_pendingIssues, _issuesListBox, IssuesCap);
+        FlushIssues();
+    }
+
+    private void FlushIssues()
+    {
+        if (_pendingIssues.IsEmpty) return;
+
+        var buffer = new List<PacketValidationIssue>();
+        while (_pendingIssues.TryDequeue(out var issue))
+        {
+            buffer.Add(issue);
+        }
+        if (buffer.Count == 0) return;
+
+        var headersDirty = false;
+        foreach (var issue in buffer)
+        {
+            var h = issue.Packet.Header;
+            if (!string.IsNullOrEmpty(h) && _failedHeaders.Add(h))
+            {
+                headersDirty = true;
+            }
+        }
+
+        _issuesListBox.BeginUpdate();
+        try
+        {
+            _issuesListBox.Items.AddRange(buffer.Cast<object>().ToArray());
+            var excess = _issuesListBox.Items.Count - IssuesCap;
+            for (var i = 0; i < excess; i++)
+            {
+                _issuesListBox.Items.RemoveAt(0);
+            }
+            _issuesListBox.TopIndex = Math.Max(0, _issuesListBox.Items.Count - 1);
+        }
+        finally
+        {
+            _issuesListBox.EndUpdate();
+        }
+
+        if (headersDirty)
+        {
+            _failedHeadersBox.Text = string.Join(", ", _failedHeaders);
+        }
     }
 
     private static void FlushQueueInto<T>(ConcurrentQueue<T> source, ListBox target, int cap)
@@ -925,17 +977,27 @@ public sealed class MainForm : Form
         }
     }
 
-    private ContextMenuStrip BuildListContextMenu(ListBox list)
+    private ContextMenuStrip BuildListContextMenu(ListBox list, bool includeRawCopy = true)
     {
         var menu = new ContextMenuStrip();
 
-        var copy = new ToolStripMenuItem("Copy") { ShortcutKeyDisplayString = "Ctrl+C" };
-        copy.Click += (_, _) => CopySelected(list, withTags: false);
-        menu.Items.Add(copy);
+        if (includeRawCopy)
+        {
+            var copy = new ToolStripMenuItem("Copy") { ShortcutKeyDisplayString = "Ctrl+C" };
+            copy.Click += (_, _) => CopySelected(list, withTags: false);
+            menu.Items.Add(copy);
 
-        var copyTags = new ToolStripMenuItem("Copy with tags");
-        copyTags.Click += (_, _) => CopySelected(list, withTags: true);
-        menu.Items.Add(copyTags);
+            var copyTags = new ToolStripMenuItem("Copy with tags");
+            copyTags.Click += (_, _) => CopySelected(list, withTags: true);
+            menu.Items.Add(copyTags);
+        }
+        else
+        {
+            // For the Issues listbox, raw-only copy is useless — the tags carry the category + detail.
+            var copyTags = new ToolStripMenuItem("Copy") { ShortcutKeyDisplayString = "Ctrl+C" };
+            copyTags.Click += (_, _) => CopySelected(list, withTags: true);
+            menu.Items.Add(copyTags);
+        }
 
         menu.Items.Add(new ToolStripSeparator());
 
@@ -957,7 +1019,9 @@ public sealed class MainForm : Form
         }
         else if (e.Control && e.KeyCode == Keys.C)
         {
-            CopySelected(list, withTags: false);
+            // Issues listbox: always copy with tags (the category + detail is the whole point).
+            var withTags = list == _issuesListBox;
+            CopySelected(list, withTags);
             e.SuppressKeyPress = true;
             e.Handled = true;
         }
