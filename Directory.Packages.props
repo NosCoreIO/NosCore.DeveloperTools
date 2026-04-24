@@ -3,7 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="NosCore.Packets" Version="18.0.0" />
+    <PackageVersion Include="NosCore.Packets" Version="19.0.0" />
     <PackageVersion Include="NosCore.ParserInputGenerator" Version="4.1.0" />
     <PackageVersion Include="NosCore.Shared" Version="6.0.0" />
   </ItemGroup>
