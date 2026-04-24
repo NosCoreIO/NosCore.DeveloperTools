@@ -140,14 +140,16 @@ public sealed class MainForm : Form
         _logListBox.Font = new Font(FontFamily.GenericMonospace, 9F);
         _logListBox.HorizontalScrollbar = true;
         _logListBox.SelectionMode = SelectionMode.MultiExtended;
-        _logListBox.KeyDown += OnLogKeyDown;
-        _logListBox.ContextMenuStrip = BuildLogContextMenu();
+        _logListBox.KeyDown += OnListKeyDown;
+        _logListBox.ContextMenuStrip = BuildListContextMenu(_logListBox);
 
         _issuesListBox.Dock = DockStyle.Fill;
         _issuesListBox.IntegralHeight = false;
         _issuesListBox.Font = new Font(FontFamily.GenericMonospace, 9F);
         _issuesListBox.HorizontalScrollbar = true;
         _issuesListBox.SelectionMode = SelectionMode.MultiExtended;
+        _issuesListBox.KeyDown += OnListKeyDown;
+        _issuesListBox.ContextMenuStrip = BuildListContextMenu(_issuesListBox);
 
         var toolbar = new FlowLayoutPanel
         {
@@ -914,65 +916,69 @@ public sealed class MainForm : Form
         }
     }
 
-    private ContextMenuStrip BuildLogContextMenu()
+    private ContextMenuStrip BuildListContextMenu(ListBox list)
     {
         var menu = new ContextMenuStrip();
 
         var copy = new ToolStripMenuItem("Copy") { ShortcutKeyDisplayString = "Ctrl+C" };
-        copy.Click += (_, _) => CopySelected(withTags: false);
+        copy.Click += (_, _) => CopySelected(list, withTags: false);
         menu.Items.Add(copy);
 
         var copyTags = new ToolStripMenuItem("Copy with tags");
-        copyTags.Click += (_, _) => CopySelected(withTags: true);
+        copyTags.Click += (_, _) => CopySelected(list, withTags: true);
         menu.Items.Add(copyTags);
 
         menu.Items.Add(new ToolStripSeparator());
 
         var selectAll = new ToolStripMenuItem("Select all") { ShortcutKeyDisplayString = "Ctrl+A" };
-        selectAll.Click += (_, _) => SelectAllLog();
+        selectAll.Click += (_, _) => SelectAll(list);
         menu.Items.Add(selectAll);
 
         return menu;
     }
 
-    private void OnLogKeyDown(object? sender, KeyEventArgs e)
+    private void OnListKeyDown(object? sender, KeyEventArgs e)
     {
+        if (sender is not ListBox list) return;
         if (e.Control && e.KeyCode == Keys.A)
         {
-            SelectAllLog();
+            SelectAll(list);
             e.SuppressKeyPress = true;
             e.Handled = true;
         }
         else if (e.Control && e.KeyCode == Keys.C)
         {
-            CopySelected(withTags: false);
+            CopySelected(list, withTags: false);
             e.SuppressKeyPress = true;
             e.Handled = true;
         }
     }
 
-    private void SelectAllLog()
+    private static void SelectAll(ListBox list)
     {
-        _logListBox.BeginUpdate();
+        list.BeginUpdate();
         try
         {
-            for (var i = 0; i < _logListBox.Items.Count; i++)
+            for (var i = 0; i < list.Items.Count; i++)
             {
-                _logListBox.SetSelected(i, true);
+                list.SetSelected(i, true);
             }
         }
         finally
         {
-            _logListBox.EndUpdate();
+            list.EndUpdate();
         }
     }
 
-    private void CopySelected(bool withTags)
+    private static void CopySelected(ListBox list, bool withTags)
     {
-        if (_logListBox.SelectedItems.Count == 0) return;
-        var lines = _logListBox.SelectedItems
-            .Cast<LoggedPacket>()
-            .Select(p => withTags ? p.ToString() : p.Raw);
+        if (list.SelectedItems.Count == 0) return;
+        var lines = list.SelectedItems.Cast<object>().Select(item => item switch
+        {
+            LoggedPacket p => withTags ? p.ToString() : p.Raw,
+            PacketValidationIssue i => withTags ? i.ToString() : i.Packet.Raw,
+            _ => item?.ToString() ?? string.Empty,
+        });
         var text = string.Join(Environment.NewLine, lines);
         if (!string.IsNullOrEmpty(text))
         {
