@@ -61,6 +61,11 @@ public sealed class PacketValidationService
 
     public PacketValidationIssue? Validate(LoggedPacket packet)
     {
+        // Skip the pre-auth handshake lines the NosTale client sends before the
+        // encrypted packet stream begins — they don't use the normal header
+        // protocol and are correctly absent from NosCore.Packets.
+        if (IsLoginHandshake(packet)) return null;
+
         var header = ExtractHeader(packet.Raw);
         if (string.IsNullOrEmpty(header)) return null;
 
@@ -103,6 +108,23 @@ public sealed class PacketValidationService
         {
             yield return alias.Identification;
         }
+    }
+
+    // The client sends three bare handshake lines at the start of every
+    // connection before the encrypted packet stream kicks in:
+    //   "<sessionId>"          — single numeric token
+    //   "<account> GF <n>"     — username / platform / region
+    //   "thisisgfmode"         — GF-mode marker
+    // None of them are header-protocol packets; flagging them as Missing is noise.
+    private static bool IsLoginHandshake(LoggedPacket packet)
+    {
+        if (packet.Direction != PacketDirection.Send) return false;
+        var tokens = packet.Raw.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length == 0) return false;
+        if (tokens.Length == 1 && ulong.TryParse(tokens[0], out _)) return true;
+        if (tokens.Length == 1 && tokens[0] == "thisisgfmode") return true;
+        if (tokens.Length >= 2 && tokens[1] == "GF") return true;
+        return false;
     }
 
     // Mirror of Deserializer's own header-extraction logic: the leading token
