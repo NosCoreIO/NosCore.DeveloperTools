@@ -84,5 +84,5 @@ Contribution is only possible with Visual Studio 2026 or an equivalent IDE.
 
 ## You like our work? ##
 <a href='https://github.com/sponsors/0Lucifer0' target='_blank'><img height='46' src='https://i.gyazo.com/47b2ca2eb6e1ce38d02b04c410e1c82a.png' alt='Sponsor me!'/></a>
-<a href='https://ko-fi.com/A3562BQV' target='_blank'><img height='46' src='https://az743702.vo.msecnd.net/cdn/kofi3.png?v=0' alt='Buy Me a Coffee at ko-fi.com'/></a>
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/A3562BQV)
 <a href='https://www.patreon.com/bePatron?u=6503887' target='_blank'><img height='46' src='https://c5.patreon.com/external/logo/become_a_patron_button@2x.png' alt='Become a Patron!'/></a>
