@@ -29,7 +29,8 @@ internal static class Program
             var processService = new ProcessService();
             using var injection = new RemoteAttachmentService();
             var log = new PacketLogService();
-            using var mainForm = new MainForm(settingsService, processService, injection, log);
+            var validation = new PacketValidationService();
+            using var mainForm = new MainForm(settingsService, processService, injection, log, validation);
             DiagnosticLog.Info("MainForm constructed, Application.Run()");
             Application.Run(mainForm);
             DiagnosticLog.Info("Application.Run() returned normally");

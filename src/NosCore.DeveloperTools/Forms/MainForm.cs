@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using NosCore.DeveloperTools.Models;
 using NosCore.DeveloperTools.Remote;
@@ -12,10 +13,27 @@ public sealed class MainForm : Form
     private readonly ProcessService _processService;
     private readonly IInjectionService _injection;
     private readonly PacketLogService _log;
+    private readonly PacketValidationService _validation;
     private AppSettings _settings;
 
     private readonly ToolStripStatusLabel _statusLabel = new() { Text = "No process attached." };
     private readonly ListBox _logListBox = new();
+    private readonly ListBox _issuesListBox = new();
+    private readonly TextBox _failedHeadersBox = new()
+    {
+        Dock = DockStyle.Top,
+        ReadOnly = true,
+        Multiline = false,
+        PlaceholderText = "Packet headers that have failed validation (cleared with the log).",
+    };
+    private readonly SortedSet<string> _failedHeaders = new(StringComparer.Ordinal);
+    // High packet rates mean per-packet BeginInvoke + ListBox.Add would saturate the UI thread.
+    // Capture threads enqueue here; a UI-thread timer drains the queue in one BeginUpdate/EndUpdate batch.
+    private readonly ConcurrentQueue<LoggedPacket> _pendingPackets = new();
+    private readonly ConcurrentQueue<PacketValidationIssue> _pendingIssues = new();
+    private readonly System.Windows.Forms.Timer _flushTimer = new() { Interval = 50 };
+    private const int LogCap = 5000;
+    private const int IssuesCap = 5000;
     private readonly CheckBox _captureSendBox = new() { Text = "Capture Send", AutoSize = true };
     private readonly CheckBox _captureRecvBox = new() { Text = "Capture Recv", AutoSize = true };
     private readonly Button _clearButton = new() { Text = "Clear", AutoSize = true };
@@ -28,12 +46,14 @@ public sealed class MainForm : Form
         SettingsService settingsService,
         ProcessService processService,
         IInjectionService injection,
-        PacketLogService log)
+        PacketLogService log,
+        PacketValidationService validation)
     {
         _settingsService = settingsService;
         _processService = processService;
         _injection = injection;
         _log = log;
+        _validation = validation;
         _settings = _settingsService.Load();
 
         Text = "NosCore.DeveloperTools";
@@ -128,8 +148,23 @@ public sealed class MainForm : Form
         _logListBox.Font = new Font(FontFamily.GenericMonospace, 9F);
         _logListBox.HorizontalScrollbar = true;
         _logListBox.SelectionMode = SelectionMode.MultiExtended;
-        _logListBox.KeyDown += OnLogKeyDown;
-        _logListBox.ContextMenuStrip = BuildLogContextMenu();
+        _logListBox.DrawMode = DrawMode.OwnerDrawFixed;
+        _logListBox.ItemHeight = _logListBox.Font.Height + 2;
+        // OwnerDraw disables ListBox's auto-measuring of item width, so pick a large
+        // static extent covering anything we realistically capture (raw packets rarely
+        // exceed ~500 chars × ~7 px/char).
+        _logListBox.HorizontalExtent = 4000;
+        _logListBox.DrawItem += LogListBox_DrawItem;
+        _logListBox.KeyDown += OnListKeyDown;
+        _logListBox.ContextMenuStrip = BuildListContextMenu(_logListBox);
+
+        _issuesListBox.Dock = DockStyle.Fill;
+        _issuesListBox.IntegralHeight = false;
+        _issuesListBox.Font = new Font(FontFamily.GenericMonospace, 9F);
+        _issuesListBox.HorizontalScrollbar = true;
+        _issuesListBox.SelectionMode = SelectionMode.MultiExtended;
+        _issuesListBox.KeyDown += OnListKeyDown;
+        _issuesListBox.ContextMenuStrip = BuildListContextMenu(_issuesListBox, includeRawCopy: false);
 
         var toolbar = new FlowLayoutPanel
         {
@@ -162,7 +197,17 @@ public sealed class MainForm : Form
 
         var injectBar = BuildInjectBar();
 
-        page.Controls.Add(_logListBox);
+        var subTabs = new TabControl { Dock = DockStyle.Fill };
+        var logPage = new TabPage("Log");
+        logPage.Controls.Add(_logListBox);
+        var issuesPage = new TabPage("Issues");
+        // Fill must be added before the docked Top control so it occupies the remaining space.
+        issuesPage.Controls.Add(_issuesListBox);
+        issuesPage.Controls.Add(_failedHeadersBox);
+        subTabs.TabPages.Add(logPage);
+        subTabs.TabPages.Add(issuesPage);
+
+        page.Controls.Add(subTabs);
         page.Controls.Add(injectBar);
         page.Controls.Add(toolbar);
         return page;
@@ -813,19 +858,38 @@ public sealed class MainForm : Form
 
     private void WireEvents()
     {
-        _log.PacketLogged += (_, packet) => BeginInvoke(() => AppendLog(packet));
-        _log.Cleared += (_, _) => BeginInvoke(() => _logListBox.Items.Clear());
+        _log.PacketLogged += (_, packet) => _pendingPackets.Enqueue(packet);
+        _log.Cleared += (_, _) => BeginInvoke(() =>
+        {
+            while (_pendingPackets.TryDequeue(out _)) { }
+            while (_pendingIssues.TryDequeue(out _)) { }
+            _logListBox.Items.Clear();
+            _issuesListBox.Items.Clear();
+            _failedHeaders.Clear();
+            _failedHeadersBox.Text = string.Empty;
+        });
 
         _injection.PacketCaptured += (_, args) =>
         {
             // Drop filtered packets at intake so they never reach the log at all.
             if (!ShouldCapture(args.Packet)) return;
+            // Stamp Issue before enqueueing so the Log flush sees the flag on first draw.
+            var issue = _validation.Validate(args.Packet);
+            if (issue is not null)
+            {
+                args.Packet.Issue = issue.Category;
+                _pendingIssues.Enqueue(issue);
+            }
             _log.Add(args.Packet);
         };
         _injection.StatusChanged += (_, msg) => BeginInvoke(() => _statusLabel.Text = msg);
 
+        _flushTimer.Tick += (_, _) => FlushPendingPackets();
+        _flushTimer.Start();
+
         FormClosing += (_, _) =>
         {
+            _flushTimer.Stop();
             _settings.MainWindow.Width = Size.Width;
             _settings.MainWindow.Height = Size.Height;
             _settings.MainWindow.X = Location.X;
@@ -834,67 +898,193 @@ public sealed class MainForm : Form
         };
     }
 
-    private void AppendLog(LoggedPacket packet)
+    private void FlushPendingPackets()
     {
-        _logListBox.Items.Add(packet);
-        if (_logListBox.Items.Count > 5000)
-        {
-            _logListBox.Items.RemoveAt(0);
-        }
-        _logListBox.TopIndex = Math.Max(0, _logListBox.Items.Count - 1);
+        FlushQueueInto(_pendingPackets, _logListBox, LogCap);
+        FlushIssues();
     }
 
-    private ContextMenuStrip BuildLogContextMenu()
+    private void FlushIssues()
+    {
+        if (_pendingIssues.IsEmpty) return;
+
+        var buffer = new List<PacketValidationIssue>();
+        while (_pendingIssues.TryDequeue(out var issue))
+        {
+            buffer.Add(issue);
+        }
+        if (buffer.Count == 0) return;
+
+        var headersDirty = false;
+        foreach (var issue in buffer)
+        {
+            var h = issue.Packet.Header;
+            if (!string.IsNullOrEmpty(h) && _failedHeaders.Add(h))
+            {
+                headersDirty = true;
+            }
+        }
+
+        _issuesListBox.BeginUpdate();
+        try
+        {
+            _issuesListBox.Items.AddRange(buffer.Cast<object>().ToArray());
+            var excess = _issuesListBox.Items.Count - IssuesCap;
+            for (var i = 0; i < excess; i++)
+            {
+                _issuesListBox.Items.RemoveAt(0);
+            }
+            _issuesListBox.TopIndex = Math.Max(0, _issuesListBox.Items.Count - 1);
+        }
+        finally
+        {
+            _issuesListBox.EndUpdate();
+        }
+
+        if (headersDirty)
+        {
+            _failedHeadersBox.Text = string.Join(", ", _failedHeaders);
+        }
+    }
+
+    private static void FlushQueueInto<T>(ConcurrentQueue<T> source, ListBox target, int cap)
+    {
+        if (source.IsEmpty) return;
+
+        // Snapshot the queue to a local array so the batch add runs in a single
+        // BeginUpdate/EndUpdate block even if more items arrive during the drain.
+        var buffer = new List<T>();
+        while (source.TryDequeue(out var item))
+        {
+            buffer.Add(item!);
+        }
+        if (buffer.Count == 0) return;
+
+        target.BeginUpdate();
+        try
+        {
+            target.Items.AddRange(buffer.Cast<object>().ToArray());
+            var excess = target.Items.Count - cap;
+            for (var i = 0; i < excess; i++)
+            {
+                target.Items.RemoveAt(0);
+            }
+            target.TopIndex = Math.Max(0, target.Items.Count - 1);
+        }
+        finally
+        {
+            target.EndUpdate();
+        }
+    }
+
+    private ContextMenuStrip BuildListContextMenu(ListBox list, bool includeRawCopy = true)
     {
         var menu = new ContextMenuStrip();
 
-        var copy = new ToolStripMenuItem("Copy") { ShortcutKeyDisplayString = "Ctrl+C" };
-        copy.Click += (_, _) => CopySelected(withTags: false);
-        menu.Items.Add(copy);
+        if (includeRawCopy)
+        {
+            var copy = new ToolStripMenuItem("Copy") { ShortcutKeyDisplayString = "Ctrl+C" };
+            copy.Click += (_, _) => CopySelected(list, withTags: false);
+            menu.Items.Add(copy);
 
-        var copyTags = new ToolStripMenuItem("Copy with tags");
-        copyTags.Click += (_, _) => CopySelected(withTags: true);
-        menu.Items.Add(copyTags);
+            var copyTags = new ToolStripMenuItem("Copy with tags");
+            copyTags.Click += (_, _) => CopySelected(list, withTags: true);
+            menu.Items.Add(copyTags);
+        }
+        else
+        {
+            // For the Issues listbox, raw-only copy is useless — the tags carry the category + detail.
+            var copyTags = new ToolStripMenuItem("Copy") { ShortcutKeyDisplayString = "Ctrl+C" };
+            copyTags.Click += (_, _) => CopySelected(list, withTags: true);
+            menu.Items.Add(copyTags);
+        }
 
         menu.Items.Add(new ToolStripSeparator());
 
         var selectAll = new ToolStripMenuItem("Select all") { ShortcutKeyDisplayString = "Ctrl+A" };
-        selectAll.Click += (_, _) => SelectAllLog();
+        selectAll.Click += (_, _) => SelectAll(list);
         menu.Items.Add(selectAll);
 
         return menu;
     }
 
-    private void OnLogKeyDown(object? sender, KeyEventArgs e)
+    private void OnListKeyDown(object? sender, KeyEventArgs e)
     {
+        if (sender is not ListBox list) return;
         if (e.Control && e.KeyCode == Keys.A)
         {
-            SelectAllLog();
+            SelectAll(list);
             e.SuppressKeyPress = true;
             e.Handled = true;
         }
         else if (e.Control && e.KeyCode == Keys.C)
         {
-            CopySelected(withTags: false);
+            // Issues listbox: always copy with tags (the category + detail is the whole point).
+            var withTags = list == _issuesListBox;
+            CopySelected(list, withTags);
             e.SuppressKeyPress = true;
             e.Handled = true;
         }
     }
 
-    private void SelectAllLog()
+    private void LogListBox_DrawItem(object? sender, DrawItemEventArgs e)
     {
-        for (var i = 0; i < _logListBox.Items.Count; i++)
+        if (e.Index < 0 || e.Index >= _logListBox.Items.Count) return;
+        e.DrawBackground();
+
+        const int stripeWidth = 4;
+        var packet = _logListBox.Items[e.Index] as LoggedPacket;
+        if (packet?.Issue is { } category)
         {
-            _logListBox.SetSelected(i, true);
+            var color = category switch
+            {
+                ValidationCategory.Missing => Color.Gold,
+                ValidationCategory.WrongStructure => Color.IndianRed,
+                ValidationCategory.WrongTag => Color.DarkOrange,
+                _ => Color.Transparent,
+            };
+            using var brush = new SolidBrush(color);
+            e.Graphics.FillRectangle(brush, e.Bounds.Left, e.Bounds.Top, stripeWidth, e.Bounds.Height);
+        }
+
+        var fg = (e.State & DrawItemState.Selected) != 0 ? SystemColors.HighlightText : SystemColors.WindowText;
+        var textBounds = new Rectangle(
+            e.Bounds.Left + stripeWidth + 2, e.Bounds.Top,
+            e.Bounds.Width - stripeWidth - 2, e.Bounds.Height);
+        TextRenderer.DrawText(
+            e.Graphics,
+            packet?.ToString() ?? _logListBox.Items[e.Index]?.ToString() ?? string.Empty,
+            e.Font ?? _logListBox.Font,
+            textBounds, fg,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        e.DrawFocusRectangle();
+    }
+
+    private static void SelectAll(ListBox list)
+    {
+        list.BeginUpdate();
+        try
+        {
+            for (var i = 0; i < list.Items.Count; i++)
+            {
+                list.SetSelected(i, true);
+            }
+        }
+        finally
+        {
+            list.EndUpdate();
         }
     }
 
-    private void CopySelected(bool withTags)
+    private static void CopySelected(ListBox list, bool withTags)
     {
-        if (_logListBox.SelectedItems.Count == 0) return;
-        var lines = _logListBox.SelectedItems
-            .Cast<LoggedPacket>()
-            .Select(p => withTags ? p.ToString() : p.Raw);
+        if (list.SelectedItems.Count == 0) return;
+        var lines = list.SelectedItems.Cast<object>().Select(item => item switch
+        {
+            LoggedPacket p => withTags ? p.ToString() : p.Raw,
+            PacketValidationIssue i => withTags ? i.ToString() : i.Packet.Raw,
+            _ => item?.ToString() ?? string.Empty,
+        });
         var text = string.Join(Environment.NewLine, lines);
         if (!string.IsNullOrEmpty(text))
         {
