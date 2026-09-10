@@ -83,6 +83,52 @@ internal static unsafe class PlayerManager
     }
 
     /// <summary>
+    /// Hex dump of client memory, for working out a struct layout when a
+    /// borrowed offset does not match this build.
+    /// </summary>
+    public static string Peek(IntPtr address, int length)
+    {
+        length = Math.Clamp(length, 1, 512);
+        if (!SafeMemory.IsReadable(address, length)) return "unreadable";
+
+        var bytes = (byte*)address;
+        var text = new System.Text.StringBuilder(length * 2);
+        for (var i = 0; i < length; i++)
+        {
+            text.Append(bytes[i].ToString("X2"));
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>
+    /// Walks the manager's fields looking for a pointer that leads to
+    /// something shaped like a map object — a non-zero id and a
+    /// coordinate pair inside map bounds. Reports every candidate rather
+    /// than picking one, since several offsets can look plausible and
+    /// only a comparison against the server's view settles it.
+    /// </summary>
+    public static string ScanForPlayerObject()
+    {
+        if (!TryGetManager(out var manager)) return "not-in-world";
+
+        var found = new List<string>();
+        for (var offset = 0; offset <= 0x100; offset += 4)
+        {
+            if (!SafeMemory.TryReadIntPtr(manager + offset, out var candidate)) continue;
+            if (candidate == IntPtr.Zero) continue;
+            if (!SafeMemory.TryReadInt32(candidate + ObjectIdOffset, out var id)) continue;
+            if (!SafeMemory.TryReadUInt16(candidate + ObjectXOffset, out var x)) continue;
+            if (!SafeMemory.TryReadUInt16(candidate + ObjectYOffset, out var y)) continue;
+            if (id == 0 || x == 0 || y == 0 || x > 300 || y > 300) continue;
+
+            found.Add($"+0x{offset:X2}=>0x{candidate.ToInt64():X}:id={id},x={x},y={y}");
+        }
+
+        return found.Count == 0 ? "no-candidates" : string.Join(" ", found);
+    }
+
+    /// <summary>
     /// Walk to a map cell. <paramref name="extraArgs"/> selects the call
     /// shape: null uses the two-register form (manager, position), which
     /// is what the client's own call sites appear to use; supplying a

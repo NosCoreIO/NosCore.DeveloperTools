@@ -75,4 +75,16 @@ public interface IInjectionService : IDisposable
     /// thread is ticking. Answer arrives as a <c>DIAG</c> line.
     /// </summary>
     bool RequestDiagnostics();
+
+    /// <summary>
+    /// Ask the hook which of the player manager's fields lead to
+    /// something shaped like a map object. Used to recover the player
+    /// object's offset when a borrowed one does not fit this build.
+    /// </summary>
+    bool RequestPlayerScan();
+
+    /// <summary>
+    /// Hex dump of client memory, for reading a struct layout directly.
+    /// </summary>
+    bool RequestPeek(long address, int length);
 }

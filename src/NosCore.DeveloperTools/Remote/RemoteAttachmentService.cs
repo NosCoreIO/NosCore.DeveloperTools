@@ -116,6 +116,18 @@ public sealed class RemoteAttachmentService : IInjectionService
         return _session.SendCommand("DIAG");
     }
 
+    public bool RequestPlayerScan()
+    {
+        if (_session is null) return false;
+        return _session.SendCommand("SCANPLAYER");
+    }
+
+    public bool RequestPeek(long address, int length)
+    {
+        if (_session is null) return false;
+        return _session.SendCommand($"PEEK {address:X} {length}");
+    }
+
     public async Task DetachAsync()
     {
         await DetachInternalAsync();
@@ -169,7 +181,9 @@ public sealed class RemoteAttachmentService : IInjectionService
 
         if (line.StartsWith("POS", StringComparison.Ordinal)
             || line.StartsWith("WALKRESULT ", StringComparison.Ordinal)
-            || line.StartsWith("DIAG ", StringComparison.Ordinal))
+            || line.StartsWith("DIAG ", StringComparison.Ordinal)
+            || line.StartsWith("SCANPLAYER ", StringComparison.Ordinal)
+            || line.StartsWith("PEEK ", StringComparison.Ordinal))
         {
             ControlReplyReceived?.Invoke(this, line);
             return;

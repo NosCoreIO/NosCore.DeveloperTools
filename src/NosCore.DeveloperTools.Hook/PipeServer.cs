@@ -137,6 +137,24 @@ internal static class PipeServer
             return;
         }
 
+        if (line.StartsWith("SCANPLAYER", StringComparison.Ordinal))
+        {
+            var scan = "not-run";
+            if (!NosThreadSynchronizer.Invoke(() => scan = PlayerManager.ScanForPlayerObject()))
+            {
+                scan = "client-thread-unavailable";
+            }
+
+            Reply("SCANPLAYER " + scan);
+            return;
+        }
+
+        if (line.StartsWith("PEEK ", StringComparison.Ordinal))
+        {
+            HandlePeek(line[5..]);
+            return;
+        }
+
         // "INJECT <S|R> <W|L> <payload>" — 11 chars minimum before payload.
         if (!line.StartsWith("INJECT ", StringComparison.Ordinal) || line.Length < 12) return;
 
@@ -211,6 +229,26 @@ internal static class PipeServer
             _ => "unknown",
         };
         Reply("WALKRESULT " + reason);
+    }
+
+    private static void HandlePeek(string args)
+    {
+        var parts = args.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2
+            || !long.TryParse(parts[0], System.Globalization.NumberStyles.HexNumber, null, out var address)
+            || !int.TryParse(parts[1], out var length))
+        {
+            Reply("PEEK bad-arguments");
+            return;
+        }
+
+        var dump = "not-run";
+        if (!NosThreadSynchronizer.Invoke(() => dump = PlayerManager.Peek((IntPtr)address, length)))
+        {
+            dump = "client-thread-unavailable";
+        }
+
+        Reply("PEEK " + dump);
     }
 
     private static void HandlePosition()
