@@ -74,6 +74,16 @@ public sealed class ControlServer
                 "/diag" => new { reply = await _driver.DiagnosticsAsync(Timeout(query)) },
                 "/pos" => Position(await _driver.PositionAsync(Timeout(query))),
                 "/walk" => new { reply = await WalkAsync(body, Timeout(query)) },
+                "/window" => new { reply = await _driver.WindowAsync(query["mode"] ?? "show", Timeout(query)) },
+                "/click" => new
+                {
+                    reply = await _driver.ClickAsync(
+                        Int(body, "x") ?? throw new InvalidOperationException("click requires 'x'."),
+                        Int(body, "y") ?? throw new InvalidOperationException("click requires 'y'."),
+                        Str(body, "mode") ?? query["mode"],
+                        Timeout(query)),
+                },
+                "/screenshot" => await ScreenshotAsync(query),
                 "/scanplayer" => new { reply = await _driver.ScanPlayerAsync(Timeout(query)) },
                 "/peek" => new
                 {
@@ -95,6 +105,14 @@ public sealed class ControlServer
         {
             await WriteAsync(context, HttpStatusCode.BadRequest, new { error = ex.Message, type = ex.GetType().Name });
         }
+    }
+
+    private async Task<object> ScreenshotAsync(System.Collections.Specialized.NameValueCollection query)
+    {
+        var path = query["path"] ?? Path.Combine(Path.GetTempPath(), "noscore-client.png");
+        var (saved, mode) = await _driver.ScreenshotAsync(path, query["mode"], Timeout(query));
+        var info = new FileInfo(saved);
+        return new { path = saved, mode, bytes = info.Length };
     }
 
     private async Task<object> AttachAsync(JsonElement? body)

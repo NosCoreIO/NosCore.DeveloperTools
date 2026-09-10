@@ -1,12 +1,34 @@
+using System.Runtime.InteropServices;
+
 namespace NosCore.DeveloperTools.Cli;
 
 internal static class Program
 {
     private const int DefaultPort = 8787;
 
+    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    private static readonly IntPtr PerMonitorAwareV2 = -4;
+
+    [DllImport("user32.dll")]
+    private static extern bool SetProcessDpiAwarenessContext(IntPtr context);
+
     [STAThread]
     private static async Task<int> Main(string[] args)
     {
+        // The client is DPI-aware, so every coordinate it reports — window
+        // rects, and the pixels in a capture — is physical. Left unaware,
+        // this process would read and write logical coordinates instead,
+        // and on a scaled display a click aimed from a screenshot lands
+        // somewhere else entirely.
+        try
+        {
+            SetProcessDpiAwarenessContext(PerMonitorAwareV2);
+        }
+        catch
+        {
+            // Pre-1703 hosts: coordinates stay logical, clicks need scaling.
+        }
+
         var port = ParsePort(args) ?? DefaultPort;
 
         await using var driver = new ClientDriver();
@@ -21,6 +43,7 @@ internal static class Program
         Console.WriteLine("  POST /inject   {payload, direction}  raw packet injection");
         Console.WriteLine("  GET  /packets?since=N&contains=      captured traffic");
         Console.WriteLine("  GET  /log?since=N                    hook status lines");
+        Console.WriteLine("  GET  /screenshot?path=&mode=         capture just the client window");
         Console.WriteLine("  GET  /quit                           stop the driver");
 
         try

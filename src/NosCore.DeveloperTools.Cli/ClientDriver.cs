@@ -167,6 +167,76 @@ public sealed class ClientDriver : IAsyncDisposable
         return await Await(waiter, timeout, "PEEK");
     }
 
+    public async Task<string> WindowAsync(string mode, TimeSpan timeout)
+    {
+        var waiter = Expect("WINDOW");
+        if (!_injection.RequestWindow(mode)) throw new InvalidOperationException("Not attached.");
+        return await Await(waiter, timeout, "WINDOW");
+    }
+
+    /// <summary>
+    /// The client's window handle, asked of the hook rather than taken
+    /// from Process.MainWindowHandle — the client owns several top-level
+    /// windows and MainWindowHandle picks a zero-size one, not the game.
+    /// </summary>
+    public async Task<IntPtr> GetWindowHandleAsync(TimeSpan timeout)
+    {
+        // Looking at and clicking the client should not require the hook —
+        // it is also how we check whether the hook is what broke it.
+        if (!IsAttached && _client is { HasExited: false })
+        {
+            var direct = ProcessWindows.FindGameWindow(_client.Id);
+            if (direct != IntPtr.Zero) return direct;
+        }
+
+        var reply = await WindowAsync("describe", timeout);
+        var marker = reply.IndexOf("hwnd=0x", StringComparison.Ordinal);
+        if (marker < 0) throw new InvalidOperationException($"No client window: {reply}");
+
+        var start = marker + "hwnd=0x".Length;
+        var end = reply.IndexOf(' ', start);
+        var hex = end < 0 ? reply[start..] : reply[start..end];
+        return (IntPtr)Convert.ToInt64(hex, 16);
+    }
+
+    public async Task<(string Path, string Mode)> ScreenshotAsync(string path, string? mode, TimeSpan timeout)
+    {
+        var window = await GetWindowHandleAsync(timeout);
+
+        if (mode is "screen")
+        {
+            return (Screenshot.Capture(window, Screenshot.Mode.Screen, path), "screen");
+        }
+
+        Screenshot.Capture(window, Screenshot.Mode.Window, path);
+        if (mode is "window" || !Screenshot.LooksBlank(path))
+        {
+            return (path, "window");
+        }
+
+        // Accelerated surfaces often refuse to render into the DC and come
+        // back as a flat rectangle; fall back rather than return a blank.
+        return (Screenshot.Capture(window, Screenshot.Mode.Screen, path), "screen-fallback");
+    }
+
+    /// <summary>
+    /// Click at a point in client coordinates. Real system input by
+    /// default — the client does not observe posted window messages, so
+    /// the "post" mode is kept only for controls that do.
+    /// </summary>
+    public async Task<string> ClickAsync(int x, int y, string? mode, TimeSpan timeout)
+    {
+        if (mode == "post")
+        {
+            var waiter = Expect("CLICK");
+            if (!_injection.RequestClick(x, y)) throw new InvalidOperationException("Not attached.");
+            return await Await(waiter, timeout, "CLICK");
+        }
+
+        var window = await GetWindowHandleAsync(timeout);
+        return Input.Click(window, x, y);
+    }
+
     public bool Inject(PacketDirection direction, PacketConnection connection, string payload) =>
         _injection.InjectPacket(direction, connection, payload);
 
@@ -180,16 +250,25 @@ public sealed class ClientDriver : IAsyncDisposable
     {
         if (_client is null) throw new InvalidOperationException("No client launched; pass a process id.");
 
-        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var deadline = DateTime.UtcNow.AddSeconds(90);
         while (DateTime.UtcNow < deadline)
         {
             _client.Refresh();
             if (_client.HasExited) throw new InvalidOperationException("Client exited before it could be attached.");
-            if (_client.MainWindowHandle != IntPtr.Zero) return _client.Id;
+
+            if (ProcessWindows.FindGameWindow(_client.Id) != IntPtr.Zero)
+            {
+                // The window appears a moment before the client has finished
+                // wiring itself up, and injecting into that gap kills it.
+                await Task.Delay(2000, ct);
+                Note("game window up, attaching");
+                return _client.Id;
+            }
+
             await Task.Delay(250, ct);
         }
 
-        throw new TimeoutException("Client never opened a window.");
+        throw new TimeoutException("Client never opened its game window.");
     }
 
     private Waiter Expect(string prefix)

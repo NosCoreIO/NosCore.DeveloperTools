@@ -155,6 +155,32 @@ internal static class PipeServer
             return;
         }
 
+        if (line.StartsWith("WINDOW", StringComparison.Ordinal))
+        {
+            if (line.Contains("list", StringComparison.OrdinalIgnoreCase))
+            {
+                Reply("WINDOW " + ClientWindow.List());
+                return;
+            }
+
+            var show = line.Contains("show", StringComparison.OrdinalIgnoreCase);
+            Reply("WINDOW " + (show ? ClientWindow.Show() : ClientWindow.Describe()));
+            return;
+        }
+
+        if (line.StartsWith("CLICK ", StringComparison.Ordinal))
+        {
+            var parts = line[6..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2 || !int.TryParse(parts[0], out var cx) || !int.TryParse(parts[1], out var cy))
+            {
+                Reply("CLICK bad-arguments");
+                return;
+            }
+
+            Reply("CLICK " + ClientWindow.Click(cx, cy));
+            return;
+        }
+
         // "INJECT <S|R> <W|L> <payload>" — 11 chars minimum before payload.
         if (!line.StartsWith("INJECT ", StringComparison.Ordinal) || line.Length < 12) return;
 

@@ -128,6 +128,18 @@ public sealed class RemoteAttachmentService : IInjectionService
         return _session.SendCommand($"PEEK {address:X} {length}");
     }
 
+    public bool RequestWindow(string mode)
+    {
+        if (_session is null) return false;
+        return _session.SendCommand(string.IsNullOrWhiteSpace(mode) ? "WINDOW" : $"WINDOW {mode}");
+    }
+
+    public bool RequestClick(int x, int y)
+    {
+        if (_session is null) return false;
+        return _session.SendCommand($"CLICK {x} {y}");
+    }
+
     public async Task DetachAsync()
     {
         await DetachInternalAsync();
@@ -183,7 +195,9 @@ public sealed class RemoteAttachmentService : IInjectionService
             || line.StartsWith("WALKRESULT ", StringComparison.Ordinal)
             || line.StartsWith("DIAG ", StringComparison.Ordinal)
             || line.StartsWith("SCANPLAYER ", StringComparison.Ordinal)
-            || line.StartsWith("PEEK ", StringComparison.Ordinal))
+            || line.StartsWith("PEEK ", StringComparison.Ordinal)
+            || line.StartsWith("WINDOW ", StringComparison.Ordinal)
+            || line.StartsWith("CLICK ", StringComparison.Ordinal))
         {
             ControlReplyReceived?.Invoke(this, line);
             return;

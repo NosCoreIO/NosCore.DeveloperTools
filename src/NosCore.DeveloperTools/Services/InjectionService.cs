@@ -87,4 +87,14 @@ public interface IInjectionService : IDisposable
     /// Hex dump of client memory, for reading a struct layout directly.
     /// </summary>
     bool RequestPeek(long address, int length);
+
+    /// <summary>
+    /// Restore and focus the client window, or report its geometry.
+    /// Runs inside the client because the launcher elevates it, and
+    /// UIPI drops window calls that come from lower integrity.
+    /// </summary>
+    bool RequestWindow(string mode);
+
+    /// <summary>Post a left click in client coordinates.</summary>
+    bool RequestClick(int x, int y);
 }
