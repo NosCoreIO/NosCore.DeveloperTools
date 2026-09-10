@@ -225,6 +225,7 @@ internal static class PipeServer
             WalkResult.NoWalkFunction => "walk-signature-not-found",
             WalkResult.NoPlayerManager => "player-manager-signature-not-found",
             WalkResult.NotInWorld => "not-in-world",
+            WalkResult.NoCharacterLoaded => "no-character-loaded",
             WalkResult.NoClientThread => "client-thread-unavailable",
             _ => "unknown",
         };
@@ -266,11 +267,13 @@ internal static class PipeServer
     {
         var install = Hooks.LastInstall;
         var inWorld = PlayerManager.TryGetManager(out var manager);
+        var loaded = PlayerManager.TryGetPlayer(out var player, out var playerId);
         var periodic = install.PeriodicHooked ? Fmt(install.PeriodicAddress) : Fmt(install.PeriodicAddress) + "(not-hooked)";
 
         Reply($"DIAG ticks={NosThreadSynchronizer.Ticks} periodic={periodic} " +
             $"manager-slot={Fmt(install.PlayerManagerStaticAddress)} manager={Fmt(manager)} " +
-            $"walk={Fmt(install.WalkAddress)} in-world={inWorld}");
+            $"walk={Fmt(install.WalkAddress)} in-world={inWorld} " +
+            $"player={Fmt(player)} player-id={playerId} character-loaded={loaded}");
     }
 
     private static string Fmt(IntPtr address) => address == IntPtr.Zero ? "none" : $"0x{address.ToInt64():X}";

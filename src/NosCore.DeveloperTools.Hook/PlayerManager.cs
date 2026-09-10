@@ -6,6 +6,7 @@ internal enum WalkResult
     NoWalkFunction,
     NoPlayerManager,
     NotInWorld,
+    NoCharacterLoaded,
     NoClientThread,
 }
 
@@ -23,9 +24,32 @@ internal enum WalkResult
 internal static unsafe class PlayerManager
 {
     private const int PlayerObjectOffset = 0x20;
+    private const int PlayerIdOffset = 0x24;
     private const int ObjectIdOffset = 0x08;
     private const int ObjectXOffset = 0x0C;
     private const int ObjectYOffset = 0x0E;
+
+    /// <summary>
+    /// The manager exists as soon as the client reaches its game scene,
+    /// several seconds before a character is loaded into it — at that
+    /// point the player slot is null and the id reads -1. Movement
+    /// dereferences the player, so a non-null manager is not enough to
+    /// make the call safe.
+    /// </summary>
+    public static bool TryGetPlayer(out IntPtr player, out int playerId)
+    {
+        player = IntPtr.Zero;
+        playerId = -1;
+
+        if (!TryGetManager(out var manager)) return false;
+        if (!SafeMemory.TryReadIntPtr(manager + PlayerObjectOffset, out var candidate)) return false;
+        if (candidate == IntPtr.Zero) return false;
+        if (!SafeMemory.TryReadInt32(manager + PlayerIdOffset, out playerId)) return false;
+        if (playerId == -1) return false;
+
+        player = candidate;
+        return true;
+    }
 
     public static IntPtr StaticAddress { get; private set; }
 
@@ -73,9 +97,7 @@ internal static unsafe class PlayerManager
         x = 0;
         y = 0;
 
-        if (!TryGetManager(out var manager)) return false;
-        if (!SafeMemory.TryReadIntPtr(manager + PlayerObjectOffset, out var playerObject)) return false;
-        if (playerObject == IntPtr.Zero) return false;
+        if (!TryGetPlayer(out var playerObject, out _)) return false;
 
         return SafeMemory.TryReadInt32(playerObject + ObjectIdOffset, out id)
             && SafeMemory.TryReadUInt16(playerObject + ObjectXOffset, out x)
@@ -141,6 +163,7 @@ internal static unsafe class PlayerManager
         if (WalkAddress == IntPtr.Zero || _walkInvoker2 == IntPtr.Zero) return WalkResult.NoWalkFunction;
         if (StaticAddress == IntPtr.Zero) return WalkResult.NoPlayerManager;
         if (!TryGetManager(out var manager)) return WalkResult.NotInWorld;
+        if (!TryGetPlayer(out _, out _)) return WalkResult.NoCharacterLoaded;
 
         var position = (y << 16) | x;
 
