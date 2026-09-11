@@ -69,7 +69,7 @@ public sealed class ControlServer
                 },
                 "/launch" => await _driver.LaunchAsync(
                     Str(body, "serverUrl"), Str(body, "username") ?? "admin", Str(body, "password") ?? "test",
-                    Str(body, "clientExe"), Str(body, "gfLang"), Str(body, "locale"), CancellationToken.None),
+                    Str(body, "clientExe"), Str(body, "gfLang"), Str(body, "locale"), Str(body, "hooks"), CancellationToken.None),
                 "/attach" => await AttachAsync(body),
                 "/diag" => new { reply = await _driver.DiagnosticsAsync(Timeout(query)) },
                 "/pos" => Position(await _driver.PositionAsync(Timeout(query))),

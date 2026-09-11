@@ -86,7 +86,7 @@ public sealed class ClientDriver : IAsyncDisposable
     /// call carries only a password.
     /// </summary>
     public async Task<LaunchResult> LaunchAsync(
-        string? serverUrl, string username, string password, string? clientExe, string? gfLang, string? locale,
+        string? serverUrl, string username, string password, string? clientExe, string? gfLang, string? locale, string? hooks,
         CancellationToken ct)
     {
         var saved = _settings.Load().Auth;
@@ -115,6 +115,11 @@ public sealed class ClientDriver : IAsyncDisposable
             UseShellExecute = false,
         };
         startInfo.EnvironmentVariables["_NC_AUTH_CODE"] = result.AuthCode;
+        if (!string.IsNullOrWhiteSpace(hooks))
+        {
+            startInfo.EnvironmentVariables["_NC_HOOKS"] = hooks;
+            Note($"hooks limited to: {hooks}");
+        }
 
         _client = Process.Start(startInfo) ?? throw new InvalidOperationException("Client failed to start.");
         Note($"client started pid={_client.Id}");

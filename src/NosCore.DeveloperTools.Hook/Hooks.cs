@@ -41,13 +41,34 @@ internal static unsafe class Hooks
     private static volatile IntPtr _worldSendContext;
     private static volatile IntPtr _worldRecvContext;
 
+    /// <summary>
+    /// Which detours to install, from <c>_NC_HOOKS</c> in the client's
+    /// environment (comma-separated: send, recv, login-recv, periodic).
+    /// Unset means all of them. A detour that destabilises the client
+    /// can only be identified by leaving it out, and the launcher owns
+    /// the client's environment, so this is the one setting available
+    /// before any code runs.
+    /// </summary>
+    private static bool Enabled(string name)
+    {
+        var configured = Environment.GetEnvironmentVariable("_NC_HOOKS");
+        if (string.IsNullOrWhiteSpace(configured)) return true;
+
+        foreach (var part in configured.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (part.Trim().Equals(name, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        return false;
+    }
+
     public static InstallResult Install()
     {
         var result = new InstallResult();
 
-        var sendAddr = PatternScanner.ScanMainModule(Signatures.Send);
-        var recvAddr = PatternScanner.ScanMainModule(Signatures.Recv);
-        var loginRecvAddr = PatternScanner.ScanMainModule(Signatures.LoginRecv);
+        var sendAddr = Enabled("send") ? PatternScanner.ScanMainModule(Signatures.Send) : IntPtr.Zero;
+        var recvAddr = Enabled("recv") ? PatternScanner.ScanMainModule(Signatures.Recv) : IntPtr.Zero;
+        var loginRecvAddr = Enabled("login-recv") ? PatternScanner.ScanMainModule(Signatures.LoginRecv) : IntPtr.Zero;
 
         result.SendAddress = sendAddr;
         result.RecvAddress = recvAddr;
@@ -80,7 +101,7 @@ internal static unsafe class Hooks
             result.LoginRecvHooked = _loginRecvTrampoline != IntPtr.Zero;
         }
 
-        var periodicAddr = PatternScanner.ScanMainModule(Signatures.Periodic);
+        var periodicAddr = Enabled("periodic") ? PatternScanner.ScanMainModule(Signatures.Periodic) : IntPtr.Zero;
         result.PeriodicAddress = periodicAddr;
         if (periodicAddr != IntPtr.Zero)
         {
