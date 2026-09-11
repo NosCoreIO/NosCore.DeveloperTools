@@ -66,6 +66,10 @@ internal static unsafe class Hooks
     {
         var result = new InstallResult();
 
+        // Must precede every detour: trampolines bake in the stub address.
+        RuntimeBootstrap.Initialize();
+        result.BootstrapStatus = RuntimeBootstrap.Status;
+
         var sendAddr = Enabled("send") ? PatternScanner.ScanMainModule(Signatures.Send) : IntPtr.Zero;
         var recvAddr = Enabled("recv") ? PatternScanner.ScanMainModule(Signatures.Recv) : IntPtr.Zero;
         var loginRecvAddr = Enabled("login-recv") ? PatternScanner.ScanMainModule(Signatures.LoginRecv) : IntPtr.Zero;
@@ -284,6 +288,7 @@ internal static unsafe class Hooks
 
 internal struct InstallResult
 {
+    public string? BootstrapStatus;
     public IntPtr PeriodicAddress;
     public IntPtr PlayerManagerStaticAddress;
     public IntPtr WalkAddress;

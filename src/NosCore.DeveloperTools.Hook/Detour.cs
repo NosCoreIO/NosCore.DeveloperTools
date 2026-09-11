@@ -72,14 +72,19 @@ internal static unsafe class Detour
         if (target == IntPtr.Zero || hook == IntPtr.Zero) return IntPtr.Zero;
         if (prologueSize < 5) return IntPtr.Zero;
 
-        // Args section size: PUSH EDX / PUSH EBP = 1 byte; PUSH EDX + PUSH EAX = 2 bytes.
-        var argsSize = arg switch
+        var argCount = arg switch
         {
             HookArg.EaxThenEdx => 2,
             HookArg.None => 0,
             _ => 1,
         };
-        var trampolineSize = 1 + 1 + argsSize + 5 + 1 + 1 + prologueSize + 5;
+
+        // Arguments are read back out of the PUSHAD frame rather than from
+        // live registers, because the bootstrap call below runs first and
+        // clobbers them. Each such push is 4 bytes.
+        var bootstrap = RuntimeBootstrap.Stub;
+        var bootstrapSize = bootstrap == IntPtr.Zero ? 0 : 13;
+        var trampolineSize = 1 + 1 + bootstrapSize + (argCount * 4) + 5 + 1 + 1 + prologueSize + 5;
         var trampoline = VirtualAlloc(IntPtr.Zero, (UIntPtr)trampolineSize,
             AllocationType.Commit | AllocationType.Reserve, MemoryProtection.ReadWrite);
         if (trampoline == IntPtr.Zero) return IntPtr.Zero;
@@ -92,27 +97,51 @@ internal static unsafe class Detour
         var pos = 0;
         t[pos++] = 0x60;                      // PUSHAD
         t[pos++] = 0x9C;                      // PUSHFD
+
+        var skipHookRel = -1;
+        if (bootstrap != IntPtr.Zero)
+        {
+            // Attach this thread to the managed runtime, and skip the hook
+            // entirely if that fails — entering managed code on a thread the
+            // AOT image has never seen kills the process.
+            t[pos++] = 0xB8;                  // MOV EAX, bootstrap
+            WriteInt32(t + pos, (int)bootstrap);
+            pos += 4;
+            t[pos++] = 0xFF; t[pos++] = 0xD0; // CALL EAX
+            t[pos++] = 0x85; t[pos++] = 0xC0; // TEST EAX, EAX
+            t[pos++] = 0x0F; t[pos++] = 0x84; // JZ rel32 -> past the hook call
+            skipHookRel = pos;
+            WriteInt32(t + pos, 0);
+            pos += 4;
+        }
+
         switch (arg)
         {
             case HookArg.Edx:
-                t[pos++] = 0x52;              // PUSH EDX
+                PushSavedRegister(t, ref pos, 0x18);
                 break;
             case HookArg.Ebp:
-                t[pos++] = 0x55;              // PUSH EBP
+                PushSavedRegister(t, ref pos, 0x0C);
                 break;
             case HookArg.None:
                 break;
             case HookArg.EaxThenEdx:
                 // stdcall pushes args right-to-left; arg1=EAX must be topmost,
-                // so push EDX first, then EAX.
-                t[pos++] = 0x52;              // PUSH EDX
-                t[pos++] = 0x50;              // PUSH EAX
+                // so push EDX first, then EAX — whose slot has moved by 4.
+                PushSavedRegister(t, ref pos, 0x18);
+                PushSavedRegister(t, ref pos, 0x24);
                 break;
         }
         t[pos++] = 0xE8;                      // CALL hook (rel32)
         var callOpAddr = (IntPtr)(t + pos - 1);
         WriteInt32(t + pos, (int)((long)hook - (long)callOpAddr - 5));
         pos += 4;
+
+        if (skipHookRel >= 0)
+        {
+            WriteInt32(t + skipHookRel, pos - (skipHookRel + 4));
+        }
+
         t[pos++] = 0x9D;                      // POPFD
         t[pos++] = 0x61;                      // POPAD
         for (var i = 0; i < prologueSize; i++) t[pos++] = saved[i];
@@ -137,6 +166,19 @@ internal static unsafe class Detour
         FlushInstructionCache(GetCurrentProcess(), target, (UIntPtr)prologueSize);
 
         return trampoline;
+    }
+
+    /// <summary>
+    /// Push one register out of the PUSHAD frame. After PUSHAD then PUSHFD
+    /// the saved registers sit at, from ESP: flags, EDI 0x04, ESI 0x08,
+    /// EBP 0x0C, ESP 0x10, EBX 0x14, EDX 0x18, ECX 0x1C, EAX 0x20.
+    /// </summary>
+    private static void PushSavedRegister(byte* dst, ref int pos, byte savedRegisterOffset)
+    {
+        dst[pos++] = 0xFF;
+        dst[pos++] = 0x74;
+        dst[pos++] = 0x24;
+        dst[pos++] = savedRegisterOffset;
     }
 
     private static void WriteInt32(byte* dst, int value)

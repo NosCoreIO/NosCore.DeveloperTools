@@ -117,8 +117,23 @@ public sealed class ClientDriver : IAsyncDisposable
         startInfo.EnvironmentVariables["_NC_AUTH_CODE"] = result.AuthCode;
         if (!string.IsNullOrWhiteSpace(hooks))
         {
-            startInfo.EnvironmentVariables["_NC_HOOKS"] = hooks;
-            Note($"hooks limited to: {hooks}");
+            // "no-bootstrap" is not a hook; it turns the thread-attach stub
+            // off so its effect can be measured against the same detours.
+            var requested = hooks.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(h => h.Trim())
+                .ToList();
+
+            if (requested.RemoveAll(h => h.Equals("no-bootstrap", StringComparison.OrdinalIgnoreCase)) > 0)
+            {
+                startInfo.EnvironmentVariables["_NC_BOOTSTRAP"] = "0";
+                Note("runtime bootstrap disabled");
+            }
+
+            if (requested.Count > 0)
+            {
+                startInfo.EnvironmentVariables["_NC_HOOKS"] = string.Join(',', requested);
+                Note($"hooks limited to: {string.Join(',', requested)}");
+            }
         }
 
         _client = Process.Start(startInfo) ?? throw new InvalidOperationException("Client failed to start.");
