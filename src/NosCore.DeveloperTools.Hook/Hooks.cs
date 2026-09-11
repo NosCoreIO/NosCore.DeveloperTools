@@ -24,6 +24,13 @@ internal static unsafe class Hooks
     private const int QueueCap = 4096;
 
     public static readonly ConcurrentQueue<CapturedPacket> Queue = new();
+
+    /// <summary>
+    /// Command replies, kept apart from captured traffic. In-world the
+    /// packet queue runs thousands of entries deep, and a reply sharing
+    /// it arrived tens of seconds after the command that asked for it.
+    /// </summary>
+    public static readonly ConcurrentQueue<string> Replies = new();
     public static int QueueDropped;
     public static InstallResult LastInstall;
 

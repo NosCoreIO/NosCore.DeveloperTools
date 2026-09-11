@@ -41,6 +41,12 @@ internal static class Input
     [DllImport("user32.dll")]
     private static extern void mouse_event(uint flags, int dx, int dy, uint data, IntPtr extraInfo);
 
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoZOrder = 0x0004;
+
     public static string Click(IntPtr window, int clientX, int clientY, bool restoreCursor = true)
     {
         if (window == IntPtr.Zero) throw new InvalidOperationException("No client window.");
@@ -49,6 +55,30 @@ internal static class Input
         if (!ClientToScreen(window, ref point))
         {
             throw new InvalidOperationException("ClientToScreen failed.");
+        }
+
+        // The game window is taller than the desktop and sits at a positive
+        // offset, so lower controls map to screen coordinates past the
+        // bottom edge. SetCursorPos clamps to the desktop, which silently
+        // puts the click on whatever else is there — so pull the window to
+        // the origin and recompute rather than clicking the wrong thing.
+        var screen = System.Windows.Forms.SystemInformation.VirtualScreen;
+        if (!screen.Contains(point.X, point.Y))
+        {
+            SetWindowPos(window, IntPtr.Zero, 0, 0, 0, 0, SwpNoSize | SwpNoZOrder);
+            Thread.Sleep(250);
+
+            point = new Point { X = clientX, Y = clientY };
+            if (!ClientToScreen(window, ref point))
+            {
+                throw new InvalidOperationException("ClientToScreen failed after move.");
+            }
+
+            if (!screen.Contains(point.X, point.Y))
+            {
+                throw new InvalidOperationException(
+                    $"Client point {clientX},{clientY} is off-screen at {point.X},{point.Y} even at the origin.");
+            }
         }
 
         GetCursorPos(out var previous);

@@ -37,7 +37,7 @@ internal static class PipeServer
     /// </summary>
     private static void Reply(string line)
     {
-        Hooks.Queue.Enqueue(new CapturedPacket(PacketDirection.Status, PacketConnection.World, line));
+        Hooks.Replies.Enqueue(line);
     }
 
     public static void Run()
@@ -68,7 +68,13 @@ internal static class PipeServer
                 {
                     FlushDrops(pipe);
 
-                    if (Hooks.Queue.TryDequeue(out var packet))
+                    // Replies first: a caller is blocked waiting on one,
+                    // while captured packets are only ever read after.
+                    if (Hooks.Replies.TryDequeue(out var reply))
+                    {
+                        WriteLine(pipe, reply);
+                    }
+                    else if (Hooks.Queue.TryDequeue(out var packet))
                     {
                         WritePacket(pipe, packet);
                     }

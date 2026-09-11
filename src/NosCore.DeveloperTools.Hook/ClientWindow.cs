@@ -57,8 +57,14 @@ internal static class ClientWindow
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowTextW(IntPtr window, StringBuilder text, int count);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassNameW(IntPtr window, StringBuilder className, int count);
+
     [DllImport("user32.dll")]
     private static extern bool PostMessageW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+
+    /// <summary>The client's main window class.</summary>
+    private const string NosTaleWindowClass = "TNosTaleMainF";
 
     /// <summary>
     /// Walks the top-level window list with FindWindowEx rather than
@@ -66,14 +72,19 @@ internal static class ClientWindow
     /// into native code, which does not survive NativeAOT here and made
     /// the scan return nothing at all.
     ///
-    /// Prefers the largest captioned window, since the client also owns
-    /// zero-size helper windows that would otherwise win.
+    /// Identifies the window by class, never by caption. Reading a
+    /// caption sends WM_GETTEXT, and we run on the pipe thread — so
+    /// asking our own window for its title blocks until the client's UI
+    /// thread is free to answer, which is exactly when we most want to
+    /// look at it. GetClassNameW reads the class directly and never
+    /// messages anyone.
     /// </summary>
     public static IntPtr Find()
     {
         var pid = (uint)Environment.ProcessId;
-        var best = IntPtr.Zero;
-        var bestArea = -1;
+        var fallback = IntPtr.Zero;
+        var fallbackArea = -1;
+        var className = new StringBuilder(64);
 
         var window = IntPtr.Zero;
         while ((window = FindWindowExW(IntPtr.Zero, window, null, null)) != IntPtr.Zero)
@@ -81,18 +92,22 @@ internal static class ClientWindow
             GetWindowThreadProcessId(window, out var owner);
             if (owner != pid) continue;
 
-            var text = new StringBuilder(256);
-            if (GetWindowTextW(window, text, text.Capacity) == 0) continue;
+            className.Clear();
+            if (GetClassNameW(window, className, className.Capacity) > 0
+                && className.ToString() == NosTaleWindowClass)
+            {
+                return window;
+            }
 
             GetWindowRect(window, out var rect);
             var area = Math.Max(0, rect.Right - rect.Left) * Math.Max(0, rect.Bottom - rect.Top);
-            if (area <= bestArea) continue;
+            if (area <= fallbackArea) continue;
 
-            bestArea = area;
-            best = window;
+            fallbackArea = area;
+            fallback = window;
         }
 
-        return best;
+        return fallback;
     }
 
     /// <summary>Every top-level window this process owns, for diagnosis.</summary>
@@ -107,10 +122,10 @@ internal static class ClientWindow
             GetWindowThreadProcessId(window, out var owner);
             if (owner != pid) continue;
 
-            var text = new StringBuilder(256);
-            GetWindowTextW(window, text, text.Capacity);
+            var className = new StringBuilder(64);
+            GetClassNameW(window, className, className.Capacity);
             GetWindowRect(window, out var rect);
-            found.Add($"0x{window.ToInt64():X}:'{text}':{rect.Right - rect.Left}x{rect.Bottom - rect.Top}" +
+            found.Add($"0x{window.ToInt64():X}:{className}:{rect.Right - rect.Left}x{rect.Bottom - rect.Top}" +
                 $":visible={IsWindowVisible(window)}:iconic={IsIconic(window)}");
         }
 
@@ -142,10 +157,10 @@ internal static class ClientWindow
     {
         GetWindowRect(window, out var rect);
         GetClientRect(window, out var client);
-        var title = new StringBuilder(256);
-        GetWindowTextW(window, title, title.Capacity);
+        var className = new StringBuilder(64);
+        GetClassNameW(window, className, className.Capacity);
 
-        return $"hwnd=0x{window.ToInt64():X} title='{title}' " +
+        return $"hwnd=0x{window.ToInt64():X} class={className} " +
             $"rect={rect.Left},{rect.Top},{rect.Right},{rect.Bottom} " +
             $"client={client.Right - client.Left}x{client.Bottom - client.Top} " +
             $"iconic={IsIconic(window)}";

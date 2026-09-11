@@ -24,7 +24,9 @@ internal static class ProcessWindows
     private static extern bool GetWindowRect(IntPtr window, out Rect rect);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern int GetWindowTextW(IntPtr window, StringBuilder text, int count);
+    private static extern int GetClassNameW(IntPtr window, StringBuilder className, int count);
+
+    private const string NosTaleWindowClass = "TNosTaleMainF";
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect
@@ -36,13 +38,15 @@ internal static class ProcessWindows
     }
 
     /// <summary>
-    /// The largest captioned top-level window the process owns, or zero
-    /// while it has none big enough to be the game window yet.
+    /// The process's game window, matched by class, or zero while it has
+    /// not created one yet. Size is only a fallback — the caption is never
+    /// read, because that sends WM_GETTEXT and blocks on a busy client.
     /// </summary>
     public static IntPtr FindGameWindow(int processId, int minWidth = 640, int minHeight = 480)
     {
-        var best = IntPtr.Zero;
-        var bestArea = 0;
+        var fallback = IntPtr.Zero;
+        var fallbackArea = 0;
+        var className = new StringBuilder(64);
 
         var window = IntPtr.Zero;
         while ((window = FindWindowExW(IntPtr.Zero, window, null, null)) != IntPtr.Zero)
@@ -50,8 +54,12 @@ internal static class ProcessWindows
             GetWindowThreadProcessId(window, out var owner);
             if (owner != (uint)processId) continue;
 
-            var text = new StringBuilder(256);
-            if (GetWindowTextW(window, text, text.Capacity) == 0) continue;
+            className.Clear();
+            if (GetClassNameW(window, className, className.Capacity) > 0
+                && className.ToString() == NosTaleWindowClass)
+            {
+                return window;
+            }
 
             GetWindowRect(window, out var rect);
             var width = rect.Right - rect.Left;
@@ -59,12 +67,12 @@ internal static class ProcessWindows
             if (width < minWidth || height < minHeight) continue;
 
             var area = width * height;
-            if (area <= bestArea) continue;
+            if (area <= fallbackArea) continue;
 
-            bestArea = area;
-            best = window;
+            fallbackArea = area;
+            fallback = window;
         }
 
-        return best;
+        return fallback;
     }
 }
