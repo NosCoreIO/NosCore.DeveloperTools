@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace NosCore.DeveloperTools.Services;
+namespace NosCore.ClientTools;
 
 /// <summary>
 /// In-place byte patches against the Gameforge NosTale client
@@ -245,7 +245,7 @@ public static class ClientPatcher
     public static PatchResult PatchImportName(byte[] bytes)
     {
         var needle = Encoding.ASCII.GetBytes("gf_wrapper.dll\0");
-        var replacement = Encoding.ASCII.GetBytes("noscore_gf.dll\0");
+        var replacement = Encoding.ASCII.GetBytes(GfStub.FileName + "\0");
         if (needle.Length != replacement.Length)
         {
             return new PatchResult(false, "Internal error: replacement DLL name must match original length.");
@@ -259,7 +259,7 @@ public static class ClientPatcher
         for (var i = 0; i < replacement.Length; i++) bytes[offset + i] = replacement[i];
 
         return new PatchResult(true,
-            $"Import rename: 'gf_wrapper.dll' -> 'noscore_gf.dll' at 0x{offset:X}. Drop noscore_gf.dll next to the patched exe.");
+            $"Import rename: 'gf_wrapper.dll' -> '{GfStub.FileName}' at 0x{offset:X}. Drop {GfStub.FileName} next to the patched exe.");
     }
 
     private static int FindBytes(byte[] haystack, byte[] needle, int startOffset)

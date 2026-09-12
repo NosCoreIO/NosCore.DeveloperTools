@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using NosCore.ClientTools;
 using NosCore.DeveloperTools.Models;
 using NosCore.DeveloperTools.Remote;
 using NosCore.DeveloperTools.Services;
@@ -617,14 +618,9 @@ public sealed class MainForm : Form
         // clobber the original.
         if (stubResult.Success)
         {
-            var stubPath = Path.Combine(outDir, "noscore_gf.dll");
             try
             {
-                using var stubStream = typeof(MainForm).Assembly.GetManifestResourceStream("noscore_gf.dll")
-                    ?? throw new FileNotFoundException("Stub DLL not embedded in this build.");
-                using var outStream = File.Create(stubPath);
-                stubStream.CopyTo(outStream);
-                Log($"Wrote {stubPath}");
+                Log($"Wrote {GfStub.DeployTo(outDir)}");
             }
             catch (Exception ex)
             {
