@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>NosCore.ClientTools</RootNamespace>
+    <AssemblyName>NosCore.ClientTools</AssemblyName>
+    <!-- No injection here, so no bitness constraint: consumers of this
+         library only spawn the client, they don't share its address space.
+         The x86 stub DLL travels as a prebuilt resource, not as code. -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Packaging">
+    <IsPackable>true</IsPackable>
+    <PackageId>NosCore.ClientTools</PackageId>
+    <Description>Authenticate against a NosCore server and prepare a NosTale client to connect to it: auth-code retrieval, PE patches for server address and launch arguments, and the gf_wrapper replacement stub.</Description>
+    <PackageTags>noscore;nostale</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/NosCoreIO/NosCore.DeveloperTools</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/NosCoreIO/NosCore.DeveloperTools</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GfStubProjectPath>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.GfStub\NosCore.DeveloperTools.GfStub.csproj</GfStubProjectPath>
+    <GfStubPublishDir>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.GfStub\bin\$(Configuration)\net10.0\win-x86\publish\</GfStubPublishDir>
+    <GfStubDllPath>$(GfStubPublishDir)noscore_gf.dll</GfStubDllPath>
+  </PropertyGroup>
+
+  <!-- The stub is a NativeAOT x86 DLL, so it cannot be a ProjectReference from
+       an AnyCPU library — it is published separately and embedded as bytes. -->
+  <Target Name="BuildGfStubPayload" BeforeTargets="BeforeBuild">
+    <Message Importance="high" Text="Publishing NosCore.DeveloperTools.GfStub (NativeAOT x86)..." />
+    <!-- ILC shells out to vswhere.exe; prepend the VS Installer dir so the
+         shell finds it even when PATH isn't pre-configured. -->
+    <Exec Command="set &quot;PATH=$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer;%PATH%&quot; &amp;&amp; dotnet publish &quot;$(GfStubProjectPath)&quot; -c $(Configuration) -r win-x86 --nologo -v quiet" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(GfStubDllPath)" LogicalName="noscore_gf.dll" Visible="false" />
+    </ItemGroup>
+  </Target>
+
+</Project>
