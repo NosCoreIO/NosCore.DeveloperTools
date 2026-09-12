@@ -3,7 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Serialization;
 
-namespace NosCore.DeveloperTools.Services;
+namespace NosCore.ClientTools;
 
 /// <summary>
 /// Thin HTTP client for the NosCore auth endpoints. Two-step flow:
