@@ -15,7 +15,7 @@
     <PackageId>NosCore.ClientTools</PackageId>
     <Description>Authenticate against a NosCore server and prepare a NosTale client to connect to it: auth-code retrieval, PE patches for server address and launch arguments, and the gf_wrapper replacement stub.</Description>
     <PackageTags>noscore;nostale</PackageTags>
-    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/NosCoreIO/NosCore.DeveloperTools</PackageProjectUrl>
     <RepositoryUrl>https://github.com/NosCoreIO/NosCore.DeveloperTools</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
