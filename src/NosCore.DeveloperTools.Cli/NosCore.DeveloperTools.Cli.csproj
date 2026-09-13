@@ -25,6 +25,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NosCore.DeveloperTools\NosCore.DeveloperTools.csproj" />
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
 
 </Project>

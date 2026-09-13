@@ -81,6 +81,42 @@ public sealed class ClientDriver : IAsyncDisposable
     }
 
     /// <summary>
+    /// The current end cursor of the packet buffer — pass it to
+    /// <see cref="WaitForPacketAsync"/> so a wait only considers packets
+    /// that arrive after the action that should provoke them.
+    /// </summary>
+    public int PacketCursor { get { lock (_gate) { return _packets.Count; } } }
+
+    /// <summary>
+    /// Block until a captured packet at or after <paramref name="since"/>
+    /// matches <paramref name="pattern"/> (regex over the raw wire text),
+    /// or the timeout elapses. This is the assertion primitive a test loop
+    /// needs: inject/act, then wait for the client's observable reaction
+    /// instead of sleeping. Returns the matching packet, or null on timeout.
+    /// </summary>
+    public async Task<LoggedPacket?> WaitForPacketAsync(string pattern, int since, TimeSpan timeout)
+    {
+        var rx = new System.Text.RegularExpressions.Regex(pattern,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var deadline = DateTime.UtcNow + timeout;
+        var cursor = since;
+        while (DateTime.UtcNow < deadline)
+        {
+            LoggedPacket? hit = null;
+            lock (_gate)
+            {
+                for (; cursor < _packets.Count; cursor++)
+                {
+                    if (rx.IsMatch(_packets[cursor].Raw)) { hit = _packets[cursor]; cursor++; break; }
+                }
+            }
+            if (hit is not null) return hit;
+            await Task.Delay(50);
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Authenticate against NosCore and start the patched client. Values
     /// left null fall back to whatever the GUI last saved, so the usual
     /// call carries only a password.
