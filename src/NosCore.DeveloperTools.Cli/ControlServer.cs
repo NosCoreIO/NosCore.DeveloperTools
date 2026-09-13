@@ -83,6 +83,11 @@ public sealed class ControlServer
                         Str(body, "mode") ?? query["mode"],
                         Timeout(query)),
                 },
+                "/connect" => new
+                {
+                    reply = await _driver.ConnectAsync(
+                        Str(body, "host") ?? "127.0.0.1", Int(body, "port") ?? 1337, Timeout(query)),
+                },
                 "/screenshot" => await ScreenshotAsync(query),
                 "/scanplayer" => new { reply = await _driver.ScanPlayerAsync(Timeout(query)) },
                 "/peek" => new

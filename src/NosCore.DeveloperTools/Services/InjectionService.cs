@@ -97,4 +97,11 @@ public interface IInjectionService : IDisposable
 
     /// <summary>Post a left click in client coordinates.</summary>
     bool RequestClick(int x, int y);
+
+    /// <summary>
+    /// Open the world connection the way the channel button does,
+    /// reusing the connection object recorded the first time the
+    /// client connected on its own.
+    /// </summary>
+    bool RequestConnect(string host, int port);
 }

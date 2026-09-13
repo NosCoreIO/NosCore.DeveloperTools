@@ -91,4 +91,26 @@ internal static class Signatures
     // Delphi register convention: EAX = manager, EDX = packed position
     // ((y << 16) | x). Never detoured, only called.
     public const string PlayerWalk = "55 8B EC 83 C4 EC 53 56 57 66 89 4D FA";
+
+    // WorldConnect: opens the connection to a world server. This is the
+    // step behind the channel button on the selection screen — the client
+    // does not open its world socket until then, which is why nothing can
+    // be driven in-game before someone clicks.
+    //
+    //   push ebx / esi / edi        ; 53 56 57
+    //   mov  edi, ecx               ; 8B F9   port
+    //   mov  esi, edx               ; 8B F2   host string
+    //   mov  ebx, eax               ; 8B D8   connection object
+    //   mov  eax, esi               ; 8B C6
+    //   call <string helper>        ; E8 ?? ?? ?? ??
+    //   push eax                    ; 50
+    //   call <resolve host>         ; E8 ?? ?? ?? ??
+    //
+    // Delphi register convention: EAX = connection object, EDX = host as
+    // a Delphi AnsiString, ECX = port. Found by breaking on ws2_32
+    // connect and walking the call stack back into the client; the worker
+    // it tail-calls writes CX straight into the sockaddr as the port,
+    // which is what pins the argument order down.
+    public const string WorldConnect =
+        "53 56 57 8B F9 8B F2 8B D8 8B C6 E8 ?? ?? ?? ?? 50 E8 ?? ?? ?? ??";
 }

@@ -161,6 +161,27 @@ internal static class PipeServer
             return;
         }
 
+        if (line.StartsWith("CONNECT ", StringComparison.Ordinal))
+        {
+            var parts = line[8..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2 || !int.TryParse(parts[1], out var port))
+            {
+                Reply("CONNECTRESULT bad-arguments");
+                return;
+            }
+
+            var outcome = WorldConnection.Connect(parts[0], port) switch
+            {
+                ConnectResult.Ok => "ok",
+                ConnectResult.NoConnectFunction => "connect-signature-not-found",
+                ConnectResult.NoContext => "no-connection-object-observed-yet",
+                ConnectResult.NoClientThread => "client-thread-unavailable",
+                _ => "unknown",
+            };
+            Reply("CONNECTRESULT " + outcome);
+            return;
+        }
+
         if (line.StartsWith("WINDOW", StringComparison.Ordinal))
         {
             if (line.Contains("list", StringComparison.OrdinalIgnoreCase))
@@ -305,7 +326,9 @@ internal static class PipeServer
         Reply($"DIAG ticks={NosThreadSynchronizer.Ticks} periodic={periodic} " +
             $"manager-slot={Fmt(install.PlayerManagerStaticAddress)} manager={Fmt(manager)} " +
             $"walk={Fmt(install.WalkAddress)} in-world={inWorld} " +
-            $"player={Fmt(player)} player-id={playerId} character-loaded={loaded}");
+            $"player={Fmt(player)} player-id={playerId} character-loaded={loaded} " +
+            $"connect={Fmt(install.ConnectAddress)} connect-object={Fmt(WorldConnection.Context)} " +
+            $"connects-seen={WorldConnection.Observed}");
     }
 
     private static string Fmt(IntPtr address) => address == IntPtr.Zero ? "none" : $"0x{address.ToInt64():X}";

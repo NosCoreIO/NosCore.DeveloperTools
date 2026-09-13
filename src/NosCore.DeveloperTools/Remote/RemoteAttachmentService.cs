@@ -140,6 +140,12 @@ public sealed class RemoteAttachmentService : IInjectionService
         return _session.SendCommand($"CLICK {x} {y}");
     }
 
+    public bool RequestConnect(string host, int port)
+    {
+        if (_session is null) return false;
+        return _session.SendCommand($"CONNECT {host} {port}");
+    }
+
     public async Task DetachAsync()
     {
         await DetachInternalAsync();
@@ -197,7 +203,8 @@ public sealed class RemoteAttachmentService : IInjectionService
             || line.StartsWith("SCANPLAYER ", StringComparison.Ordinal)
             || line.StartsWith("PEEK ", StringComparison.Ordinal)
             || line.StartsWith("WINDOW ", StringComparison.Ordinal)
-            || line.StartsWith("CLICK ", StringComparison.Ordinal))
+            || line.StartsWith("CLICK ", StringComparison.Ordinal)
+            || line.StartsWith("CONNECTRESULT ", StringComparison.Ordinal))
         {
             ControlReplyReceived?.Invoke(this, line);
             return;

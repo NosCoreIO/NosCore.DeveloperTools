@@ -257,6 +257,13 @@ public sealed class ClientDriver : IAsyncDisposable
         return Input.Click(window, x, y);
     }
 
+    public async Task<string> ConnectAsync(string host, int port, TimeSpan timeout)
+    {
+        var waiter = Expect("CONNECTRESULT");
+        if (!_injection.RequestConnect(host, port)) throw new InvalidOperationException("Not attached.");
+        return await Await(waiter, timeout, "CONNECTRESULT");
+    }
+
     public bool Inject(PacketDirection direction, PacketConnection connection, string payload) =>
         _injection.InjectPacket(direction, connection, payload);
 

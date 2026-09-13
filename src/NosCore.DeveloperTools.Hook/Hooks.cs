@@ -126,6 +126,12 @@ internal static unsafe class Hooks
             }
         }
 
+        if (Enabled("connect"))
+        {
+            result.ConnectHooked = WorldConnection.Install();
+            result.ConnectAddress = WorldConnection.ConnectAddress;
+        }
+
         PlayerManager.Resolve();
         result.PlayerManagerStaticAddress = PlayerManager.StaticAddress;
         result.WalkAddress = PlayerManager.WalkAddress;
@@ -295,6 +301,8 @@ internal static unsafe class Hooks
 
 internal struct InstallResult
 {
+    public IntPtr ConnectAddress;
+    public bool ConnectHooked;
     public string? BootstrapStatus;
     public IntPtr PeriodicAddress;
     public IntPtr PlayerManagerStaticAddress;

@@ -75,6 +75,54 @@ internal static unsafe class ClientInvoker
 
     /// <summary>
     /// Build a cdecl-callable invoker for a Delphi register-convention
+    /// function taking exactly three arguments in EAX, EDX and ECX, with
+    /// nothing on the stack. Cast the result to
+    /// <c>delegate* unmanaged[Cdecl]&lt;IntPtr, IntPtr, int, void&gt;</c>.
+    ///
+    ///   55           push ebp
+    ///   8B EC        mov  ebp, esp
+    ///   8B 45 08     mov  eax, [ebp+0x08]
+    ///   8B 55 0C     mov  edx, [ebp+0x0C]
+    ///   8B 4D 10     mov  ecx, [ebp+0x10]
+    ///   E8 rel32     call target
+    ///   8B E5        mov  esp, ebp
+    ///   5D           pop  ebp
+    ///   C3           ret
+    /// </summary>
+    public static IntPtr BuildRegisterInvoker3(IntPtr target)
+    {
+        const int Size = 21;
+        const int CallOpcodeOffset = 12;
+
+        var thunk = VirtualAlloc(IntPtr.Zero, (UIntPtr)Size,
+            AllocationType.Commit | AllocationType.Reserve, MemoryProtection.ReadWrite);
+        if (thunk == IntPtr.Zero) return IntPtr.Zero;
+
+        var t = (byte*)thunk;
+        t[0] = 0x55;
+        t[1] = 0x8B; t[2] = 0xEC;
+        t[3] = 0x8B; t[4] = 0x45; t[5] = 0x08;
+        t[6] = 0x8B; t[7] = 0x55; t[8] = 0x0C;
+        t[9] = 0x8B; t[10] = 0x4D; t[11] = 0x10;
+
+        t[CallOpcodeOffset] = 0xE8;
+        var afterCall = (long)thunk + CallOpcodeOffset + 5;
+        var rel = (int)((long)target - afterCall);
+        t[13] = (byte)rel; t[14] = (byte)(rel >> 8);
+        t[15] = (byte)(rel >> 16); t[16] = (byte)(rel >> 24);
+
+        t[17] = 0x8B; t[18] = 0xE5;
+        t[19] = 0x5D;
+        t[20] = 0xC3;
+
+        if (!VirtualProtect(thunk, (UIntPtr)Size, MemoryProtection.ExecuteRead, out _))
+            return IntPtr.Zero;
+        FlushInstructionCache(GetCurrentProcess(), thunk, (UIntPtr)Size);
+        return thunk;
+    }
+
+    /// <summary>
+    /// Build a cdecl-callable invoker for a Delphi register-convention
     /// function taking four arguments: EAX, EDX, ECX and one stack
     /// dword. Cast the result to
     /// <c>delegate* unmanaged[Cdecl]&lt;IntPtr, int, int, int, void&gt;</c>.
