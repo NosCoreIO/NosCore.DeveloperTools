@@ -64,6 +64,9 @@ internal static unsafe class HookEntry
             var result = Hooks.Install();
             PipeServer.Announce(
                 $"hooks: send={Fmt(result.SendAddress, result.SendHooked)} recv={Fmt(result.RecvAddress, result.RecvHooked)} login-recv={Fmt(result.LoginRecvAddress, result.LoginRecvHooked)}");
+            PipeServer.Announce(
+                $"control: periodic={Fmt(result.PeriodicAddress, result.PeriodicHooked)} walk={Fmt(result.WalkAddress, true)} manager-slot={Fmt(result.PlayerManagerStaticAddress, true)}");
+            PipeServer.Announce($"runtime-bootstrap: {result.BootstrapStatus}");
             Hooks.StartNosMallPoller();
         }
         catch (Exception ex)

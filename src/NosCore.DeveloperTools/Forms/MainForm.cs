@@ -42,6 +42,20 @@ public sealed class MainForm : Form
     private readonly Button _injectSendButton = new() { Text = "Send", AutoSize = true };
     private readonly Button _injectRecvButton = new() { Text = "Recv", AutoSize = true };
 
+    private readonly TextBox _walkXBox = new() { Width = 52, PlaceholderText = "x" };
+    private readonly TextBox _walkYBox = new() { Width = 52, PlaceholderText = "y" };
+    private readonly Button _walkButton = new() { Text = "Walk", AutoSize = true };
+    private readonly Button _positionButton = new() { Text = "Where am I?", AutoSize = true };
+    private readonly Button _diagButton = new() { Text = "Hook diagnostics", AutoSize = true };
+    private readonly TextBox _controlReplyBox = new()
+    {
+        Dock = DockStyle.Fill,
+        Multiline = true,
+        ReadOnly = true,
+        ScrollBars = ScrollBars.Vertical,
+        Font = new Font(FontFamily.GenericMonospace, 8.25f),
+    };
+
     public MainForm(
         SettingsService settingsService,
         ProcessService processService,
@@ -196,6 +210,7 @@ public sealed class MainForm : Form
         toolbar.Controls.Add(_clearButton);
 
         var injectBar = BuildInjectBar();
+        var controlBar = BuildControlBar();
 
         var subTabs = new TabControl { Dock = DockStyle.Fill };
         var logPage = new TabPage("Log");
@@ -209,8 +224,76 @@ public sealed class MainForm : Form
 
         page.Controls.Add(subTabs);
         page.Controls.Add(injectBar);
+        page.Controls.Add(controlBar);
         page.Controls.Add(toolbar);
         return page;
+    }
+
+    /// <summary>
+    /// Client control: movement and state read through the client's own
+    /// routines, as opposed to the inject bar above which pushes raw
+    /// packets past them.
+    /// </summary>
+    private Control BuildControlBar()
+    {
+        var panel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(4),
+        };
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+
+        var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
+        buttons.Controls.Add(new Label { Text = "Walk to", AutoSize = true, Padding = new Padding(0, 6, 0, 0) });
+        buttons.Controls.Add(_walkXBox);
+        buttons.Controls.Add(_walkYBox);
+        buttons.Controls.Add(_walkButton);
+        buttons.Controls.Add(_positionButton);
+        buttons.Controls.Add(_diagButton);
+
+        _walkButton.Click += (_, _) => Walk();
+        _positionButton.Click += (_, _) => SendControlCommand(_injection.RequestPosition());
+        _diagButton.Click += (_, _) => SendControlCommand(_injection.RequestDiagnostics());
+        _walkYBox.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Enter) return;
+            _walkButton.PerformClick();
+            e.SuppressKeyPress = true;
+        };
+
+        _controlReplyBox.Dock = DockStyle.Fill;
+        panel.Controls.Add(buttons, 0, 0);
+        panel.Controls.Add(_controlReplyBox, 0, 1);
+        return panel;
+    }
+
+    private void Walk()
+    {
+        if (!ushort.TryParse(_walkXBox.Text.Trim(), out var x) || !ushort.TryParse(_walkYBox.Text.Trim(), out var y))
+        {
+            AppendControlReply("walk needs numeric x and y");
+            return;
+        }
+
+        SendControlCommand(_injection.Walk(x, y));
+    }
+
+    private void SendControlCommand(bool sent)
+    {
+        if (!sent)
+        {
+            AppendControlReply("not attached — no hook session");
+        }
+    }
+
+    private void AppendControlReply(string line)
+    {
+        _controlReplyBox.AppendText(line + Environment.NewLine);
     }
 
     private Control BuildInjectBar()
@@ -883,6 +966,7 @@ public sealed class MainForm : Form
             _log.Add(args.Packet);
         };
         _injection.StatusChanged += (_, msg) => BeginInvoke(() => _statusLabel.Text = msg);
+        _injection.ControlReplyReceived += (_, line) => BeginInvoke(() => AppendControlReply(line));
 
         _flushTimer.Tick += (_, _) => FlushPendingPackets();
         _flushTimer.Start();

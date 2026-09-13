@@ -24,11 +24,20 @@ internal static unsafe class Hooks
     private const int QueueCap = 4096;
 
     public static readonly ConcurrentQueue<CapturedPacket> Queue = new();
+
+    /// <summary>
+    /// Command replies, kept apart from captured traffic. In-world the
+    /// packet queue runs thousands of entries deep, and a reply sharing
+    /// it arrived tens of seconds after the command that asked for it.
+    /// </summary>
+    public static readonly ConcurrentQueue<string> Replies = new();
     public static int QueueDropped;
+    public static InstallResult LastInstall;
 
     private static IntPtr _sendTrampoline;
     private static IntPtr _recvTrampoline;
     private static IntPtr _loginRecvTrampoline;
+    private static IntPtr _periodicTrampoline;
 
     // Invoker thunks for re-entering the client's own send/recv functions
     // (Delphi register convention). Cached after scanning.
@@ -39,13 +48,38 @@ internal static unsafe class Hooks
     private static volatile IntPtr _worldSendContext;
     private static volatile IntPtr _worldRecvContext;
 
+    /// <summary>
+    /// Which detours to install, from <c>_NC_HOOKS</c> in the client's
+    /// environment (comma-separated: send, recv, login-recv, periodic).
+    /// Unset means all of them. A detour that destabilises the client
+    /// can only be identified by leaving it out, and the launcher owns
+    /// the client's environment, so this is the one setting available
+    /// before any code runs.
+    /// </summary>
+    private static bool Enabled(string name)
+    {
+        var configured = Environment.GetEnvironmentVariable("_NC_HOOKS");
+        if (string.IsNullOrWhiteSpace(configured)) return true;
+
+        foreach (var part in configured.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (part.Trim().Equals(name, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        return false;
+    }
+
     public static InstallResult Install()
     {
         var result = new InstallResult();
 
-        var sendAddr = PatternScanner.ScanMainModule(Signatures.Send);
-        var recvAddr = PatternScanner.ScanMainModule(Signatures.Recv);
-        var loginRecvAddr = PatternScanner.ScanMainModule(Signatures.LoginRecv);
+        // Must precede every detour: trampolines bake in the stub address.
+        RuntimeBootstrap.Initialize();
+        result.BootstrapStatus = RuntimeBootstrap.Status;
+
+        var sendAddr = Enabled("send") ? PatternScanner.ScanMainModule(Signatures.Send) : IntPtr.Zero;
+        var recvAddr = Enabled("recv") ? PatternScanner.ScanMainModule(Signatures.Recv) : IntPtr.Zero;
+        var loginRecvAddr = Enabled("login-recv") ? PatternScanner.ScanMainModule(Signatures.LoginRecv) : IntPtr.Zero;
 
         result.SendAddress = sendAddr;
         result.RecvAddress = recvAddr;
@@ -78,7 +112,61 @@ internal static unsafe class Hooks
             result.LoginRecvHooked = _loginRecvTrampoline != IntPtr.Zero;
         }
 
+        var periodicAddr = Enabled("periodic") ? PatternScanner.ScanMainModule(Signatures.Periodic) : IntPtr.Zero;
+        result.PeriodicAddress = periodicAddr;
+        if (periodicAddr != IntPtr.Zero)
+        {
+            delegate* unmanaged[Stdcall]<void> periodicHook = &HookedPeriodic;
+            _periodicTrampoline = Detour.Install(periodicAddr, (IntPtr)periodicHook,
+                prologueSize: Signatures.PeriodicPrologueSize, arg: Detour.HookArg.None);
+            result.PeriodicHooked = _periodicTrampoline != IntPtr.Zero;
+            if (result.PeriodicHooked)
+            {
+                NosThreadSynchronizer.MarkInstalled();
+            }
+        }
+
+        if (Enabled("connect"))
+        {
+            result.ConnectHooked = WorldConnection.Install();
+            result.ConnectAddress = WorldConnection.ConnectAddress;
+        }
+
+        PlayerManager.Resolve();
+        result.PlayerManagerStaticAddress = PlayerManager.StaticAddress;
+        result.WalkAddress = PlayerManager.WalkAddress;
+
+        LastInstall = result;
         return result;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
+    private static void HookedPeriodic() => NosThreadSynchronizer.Tick();
+
+    public static WalkResult Walk(ushort x, ushort y, (int Un0, int Un1)? extraArgs) =>
+        PlayerManager.Walk(x, y, extraArgs);
+
+    /// <summary>
+    /// Reads the character's position on the client thread where
+    /// possible, so a position sampled mid-move can't be a torn read of
+    /// coordinates the frame loop is writing.
+    /// </summary>
+    public static bool TryGetPosition(out int id, out ushort x, out ushort y)
+    {
+        var readId = 0;
+        ushort readX = 0;
+        ushort readY = 0;
+        var read = false;
+
+        if (NosThreadSynchronizer.Invoke(() => read = PlayerManager.TryGetPosition(out readId, out readX, out readY)))
+        {
+            id = readId;
+            x = readX;
+            y = readY;
+            return read;
+        }
+
+        return PlayerManager.TryGetPosition(out id, out x, out y);
     }
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
@@ -151,14 +239,29 @@ internal static unsafe class Hooks
         try
         {
             var ansi = ClientInvoker.AllocAnsiString(packet);
-            var invoker = (delegate* unmanaged[Cdecl]<IntPtr, IntPtr, void>)invokerPtr;
-            invoker(ctx, ansi);
+
+            // Prefer the client's own thread. The direct call is kept as a
+            // fallback so injection still works if the periodic signature
+            // drifts — it races the frame loop, which is survivable for
+            // send/recv but is why movement never takes this path.
+            if (NosThreadSynchronizer.Invoke(() => CallInvoker(invokerPtr, ctx, ansi)))
+            {
+                return true;
+            }
+
+            CallInvoker(invokerPtr, ctx, ansi);
             return true;
         }
         catch
         {
             return false;
         }
+    }
+
+    private static void CallInvoker(IntPtr invokerPtr, IntPtr ctx, IntPtr ansi)
+    {
+        var invoker = (delegate* unmanaged[Cdecl]<IntPtr, IntPtr, void>)invokerPtr;
+        invoker(ctx, ansi);
     }
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
@@ -198,6 +301,13 @@ internal static unsafe class Hooks
 
 internal struct InstallResult
 {
+    public IntPtr ConnectAddress;
+    public bool ConnectHooked;
+    public string? BootstrapStatus;
+    public IntPtr PeriodicAddress;
+    public IntPtr PlayerManagerStaticAddress;
+    public IntPtr WalkAddress;
+    public bool PeriodicHooked;
     public IntPtr SendAddress;
     public IntPtr RecvAddress;
     public IntPtr LoginRecvAddress;

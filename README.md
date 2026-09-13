@@ -23,6 +23,45 @@ This is an independent and unofficial tool for educational use ONLY. Using the P
 - Per-direction capture toggles, blacklist/whitelist filters (filtered packets are dropped at intake), Ctrl+A / Ctrl+C / right-click copy with and without tags, Clear button.
 - Custom packet inject — send / receive synthetic packets through the client's own send/recv functions using a Delphi register-convention invoker thunk + a hand-rolled Delphi AnsiString.
 
+### Client Control
+
+Drives the character through the client's own routines rather than through synthetic packets, so the client's local state stays consistent with the server's.
+
+- **Walk to x/y** calls the client's movement routine. The client updates its own position, animates, and builds the outgoing `walk` packet itself — including the checksum byte, which we therefore never have to reproduce. Injecting a `walk` packet instead would move the character server-side only and desync every packet the client originates afterwards.
+- **Where am I?** reads the live character id and coordinates out of the client's player manager, which is the ground truth to assert against when comparing with what the server thinks.
+- **Hook diagnostics** reports which signatures resolved, whether the client thread is ticking, and whether the character is in-world — the first thing to check when a client patch drifts a signature.
+
+All client calls are marshalled onto the client's own thread via a per-frame periodic detour. The client keeps its game state under no synchronisation, so calling a routine straight from the pipe thread races the frame loop. Packet injection now takes the same path, falling back to a direct call only if the periodic signature fails to resolve.
+
+Both movement and state reads need the character to be in-world; the player-manager slot is null until then, and the reply says so rather than guessing.
+
+### Headless driver
+
+`NosCore.DeveloperTools.Cli` runs the same attach and control flow without the GUI, holding the pipe session open and exposing it over `http://127.0.0.1:8787`. It exists so a change can be tested against a real client without anyone clicking through login: launch, attach, drive, assert.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /launch` `{password, hooks?}` | Authenticate against NosCore and start the patched client |
+| `POST /attach` `{pid?}` | Inject the hook and open the pipe |
+| `GET /diag` | Resolved signatures, tick count, in-world and character state |
+| `GET /pos` | Live character id and coordinates |
+| `POST /walk` `{x, y, un0, un1}` | Move through the client's own routine |
+| `POST /click` `{x, y}` | Real mouse input at a point in client coordinates |
+| `GET /screenshot?path=&mode=` | Capture the client window alone |
+| `POST /inject` `{payload, direction}` | Raw packet injection |
+| `GET /packets?since=N` | Captured traffic, cursor-paged |
+| `GET /log?since=N` | Hook status lines |
+
+It must run elevated, because the client inherits that elevation and UIPI discards window calls and injected input arriving from lower integrity.
+
+Two arguments to `/walk` are unnamed in every reference we have. `un0: 0, un1: 1` is what works; the invoker restores `ESP` from `EBP`, so a wrong guess is a no-op rather than a crash.
+
+`hooks` on `/launch` selects which detours to install — `send`, `recv`, `login-recv`, `periodic`, plus `no-bootstrap` to skip the thread-attach stub. Only useful for bisecting a client that misbehaves; leave it unset otherwise.
+
+**Screenshots.** `PrintWindow` first, so occlusion and off-screen area don't matter. Accelerated surfaces sometimes refuse to render into the device context and come back flat; that is detected (ignoring the title bar, which always paints) and retried as a screen grab with the window pulled to the origin.
+
+**Clicking.** The client reads the mouse below the window-message layer, so a posted `WM_LBUTTONDOWN` is never seen — `/click` drives the real cursor. Points are in client coordinates, which is what a screenshot gives you once you subtract the window chrome.
+
 ### Client Creator
 Point it at a copy of `NostaleClientX.exe`, pick a new server address and output filename, hit **Patch**. The output binary gets three edits:
 
