@@ -45,7 +45,12 @@ internal static class Input
     private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
     private const uint SwpNoZOrder = 0x0004;
+    private const uint SwpShowWindow = 0x0040;
+
+    private static readonly IntPtr HwndTopmost = -1;
+    private static readonly IntPtr HwndNoTopmost = -2;
 
     public static string Click(IntPtr window, int clientX, int clientY, bool restoreCursor = true)
     {
@@ -83,8 +88,15 @@ internal static class Input
 
         GetCursorPos(out var previous);
 
+        // SetForegroundWindow alone is not enough: Windows refuses
+        // foreground changes requested by a process that does not own it,
+        // so the client stayed behind whatever was maximised and the click
+        // — which goes to whatever is topmost at that point — landed on
+        // the wrong application entirely. Forcing topmost is not subject
+        // to that restriction.
+        SetWindowPos(window, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpShowWindow);
         SetForegroundWindow(window);
-        Thread.Sleep(150);
+        Thread.Sleep(200);
         SetCursorPos(point.X, point.Y);
         // The client tracks hover state, and a click that arrives in the
         // same tick as the move can land before the control is highlighted.
@@ -93,6 +105,10 @@ internal static class Input
         mouse_event(MouseEventLeftDown, 0, 0, 0, IntPtr.Zero);
         Thread.Sleep(80);
         mouse_event(MouseEventLeftUp, 0, 0, 0, IntPtr.Zero);
+
+        // Drop back out of topmost so the client does not sit permanently
+        // over everything else on the desktop.
+        SetWindowPos(window, HwndNoTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize);
 
         if (restoreCursor)
         {
