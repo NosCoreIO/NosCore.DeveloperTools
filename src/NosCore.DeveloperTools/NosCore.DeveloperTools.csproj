@@ -40,14 +40,14 @@
     <EmbeddedResource Include="Resources\logger.ico" LogicalName="NosCore.DeveloperTools.logger.ico" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\NosCore.ClientTools\NosCore.ClientTools.csproj" />
+  </ItemGroup>
+
   <PropertyGroup>
     <HookProjectPath>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.Hook\NosCore.DeveloperTools.Hook.csproj</HookProjectPath>
     <HookPublishDir>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.Hook\bin\$(Configuration)\net10.0\win-x86\publish\</HookPublishDir>
     <HookDllPath>$(HookPublishDir)NosCore.DeveloperTools.Hook.dll</HookDllPath>
-
-    <GfStubProjectPath>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.GfStub\NosCore.DeveloperTools.GfStub.csproj</GfStubProjectPath>
-    <GfStubPublishDir>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.GfStub\bin\$(Configuration)\net10.0\win-x86\publish\</GfStubPublishDir>
-    <GfStubDllPath>$(GfStubPublishDir)noscore_gf.dll</GfStubDllPath>
   </PropertyGroup>
 
   <Target Name="BuildHookPayload" BeforeTargets="BeforeBuild">
@@ -56,14 +56,6 @@
     <Exec Command="set &quot;PATH=$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer;%PATH%&quot; &amp;&amp; dotnet publish &quot;$(HookProjectPath)&quot; -c $(Configuration) -r win-x86 --nologo -v quiet" />
     <ItemGroup>
       <EmbeddedResource Include="$(HookDllPath)" LogicalName="NosCore.DeveloperTools.Hook.dll" Visible="false" />
-    </ItemGroup>
-  </Target>
-
-  <Target Name="BuildGfStubPayload" BeforeTargets="BeforeBuild">
-    <Message Importance="high" Text="Publishing NosCore.DeveloperTools.GfStub (NativeAOT x86)..." />
-    <Exec Command="set &quot;PATH=$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer;%PATH%&quot; &amp;&amp; dotnet publish &quot;$(GfStubProjectPath)&quot; -c $(Configuration) -r win-x86 --nologo -v quiet" />
-    <ItemGroup>
-      <EmbeddedResource Include="$(GfStubDllPath)" LogicalName="noscore_gf.dll" Visible="false" />
     </ItemGroup>
   </Target>
 
