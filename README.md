@@ -27,8 +27,8 @@ This is an independent and unofficial tool for educational use ONLY. Using the P
 Point it at a copy of `NostaleClientX.exe`, pick a new server address and output filename, hit **Patch**. The output binary gets three edits:
 
 1. **Server address** — the client stores the login server as a Delphi constant AnsiString in its `.rdata`. We auto-detect the slot by shape (refcount-`-1` header + IP-looking payload, no text search), overwrite the payload, and rewrite the length prefix at offset `-4`.
-2. **Allow no-arg launches** — the entry point calls `ParamCount`, decrements, and `JL`s to the exit path on a negative result. That gate aborts double-click launches. We NOP the 6-byte `JL rel32` so execution flows into the arg dispatcher regardless of argc.
-3. **Default to Entwell mode** — the arg dispatcher compares `argv[1]` against `"gf"` / `"gftest"` / `"EntwellNostaleClient"` (in that order) and `JNZ`s to exit when none match. We NOP that last `JNZ`, so any non-`gf` / non-`gftest` launch (including empty) falls into the Entwell standalone body. The `gf` / `gftest` branches are untouched — passing `gf <N>` still routes through GF mode as the real Gameforge launcher would trigger.
+2. **Double-click opens the password login** — the entry point calls `ParamCount`, decrements, and `JL`s to the exit path on a negative result. We retarget that `JL` to the body every login mode shares, so a launch without arguments reaches it with the Steam and GF flags still zero, which is the `EntwellNostaleClient` password login. Launches with an argument never take the jump, so `gf <N>` (what the Auth tab's **Sign in & launch** passes) still goes through the auth-code login.
+3. **Gameforge wrapper stub** — the `gf_wrapper.dll` import is renamed to `noscore_gf.dll`, which is written next to the patched exe and hands the client the `_NC_AUTH_CODE` from the Auth tab.
 
 ## ⚠️ Windows Defender
 

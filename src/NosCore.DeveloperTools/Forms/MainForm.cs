@@ -434,13 +434,13 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 3,
-            RowCount = 6,
+            RowCount = 5,
             Padding = new Padding(10),
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        for (var i = 0; i < 6; i++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        for (var i = 0; i < 5; i++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         var cc = _settings.ClientCreator;
         var newAddressBox = new TextBox { Dock = DockStyle.Fill, PlaceholderText = "e.g. 192.168.1.50", Text = cc.NewAddress };
@@ -449,16 +449,6 @@ public sealed class MainForm : Form
         var browseButton = new Button { Text = "Browse…", AutoSize = true };
         var patchButton = new Button { Text = "Patch", AutoSize = true };
 
-        var modeOptions = new (EntryPatchMode Mode, string Label)[]
-        {
-            (EntryPatchMode.DefaultToEntwell, "Default to EntwellNostaleClient (gf still works, but exits with EOSError 1400)"),
-            (EntryPatchMode.OnlyEntwell,      "Only EntwellNostaleClient (force Entwell always, gf no longer works, clean exit)"),
-            (EntryPatchMode.None,             "No parameter patch (double-click does nothing; must pass argv manually)"),
-        };
-        var modeCombo = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
-        foreach (var (_, label) in modeOptions) modeCombo.Items.Add(label);
-        modeCombo.SelectedIndex = Array.FindIndex(modeOptions, o => o.Mode == cc.EntryPatchMode);
-        if (modeCombo.SelectedIndex < 0) modeCombo.SelectedIndex = 0;
         var logBox = new TextBox
         {
             Multiline = true,
@@ -481,10 +471,6 @@ public sealed class MainForm : Form
         layout.Controls.Add(outputNameBox, 1, 2);
         layout.SetColumnSpan(outputNameBox, 2);
 
-        layout.Controls.Add(new Label { Text = "Entry patch:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 3);
-        layout.Controls.Add(modeCombo, 1, 3);
-        layout.SetColumnSpan(modeCombo, 2);
-
         var buttonRow = new FlowLayoutPanel
         {
             AutoSize = true,
@@ -492,10 +478,10 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
         };
         buttonRow.Controls.Add(patchButton);
-        layout.Controls.Add(buttonRow, 0, 4);
+        layout.Controls.Add(buttonRow, 0, 3);
         layout.SetColumnSpan(buttonRow, 3);
 
-        layout.Controls.Add(logBox, 0, 5);
+        layout.Controls.Add(logBox, 0, 4);
         layout.SetColumnSpan(logBox, 3);
 
         browseButton.Click += (_, _) =>
@@ -524,24 +510,18 @@ public sealed class MainForm : Form
         newAddressBox.TextChanged += (_, _) => PersistCreator();
         exeBox.TextChanged += (_, _) => PersistCreator();
         outputNameBox.TextChanged += (_, _) => PersistCreator();
-        modeCombo.SelectedIndexChanged += (_, _) =>
-        {
-            _settings.ClientCreator.EntryPatchMode = modeOptions[modeCombo.SelectedIndex].Mode;
-            Persist();
-        };
 
         patchButton.Click += (_, _) =>
         {
             logBox.Clear();
-            var mode = modeOptions[modeCombo.SelectedIndex].Mode;
-            RunPatch(newAddressBox.Text.Trim(), exeBox.Text.Trim(), outputNameBox.Text.Trim(), mode, logBox);
+            RunPatch(newAddressBox.Text.Trim(), exeBox.Text.Trim(), outputNameBox.Text.Trim(), logBox);
         };
 
         page.Controls.Add(layout);
         return page;
     }
 
-    private static void RunPatch(string newAddress, string exePath, string outputName, EntryPatchMode mode, TextBox logBox)
+    private static void RunPatch(string newAddress, string exePath, string outputName, TextBox logBox)
     {
         void Log(string msg) => logBox.AppendText(msg + Environment.NewLine);
 
@@ -576,19 +556,9 @@ public sealed class MainForm : Form
         Log(ipResult.Log);
         if (!ipResult.Success) return;
 
-        switch (mode)
-        {
-            case EntryPatchMode.DefaultToEntwell:
-                Log(ClientPatcher.PatchAllowNoArg(bytes).Log);
-                Log(ClientPatcher.PatchDefaultToEntwell(bytes).Log);
-                break;
-            case EntryPatchMode.OnlyEntwell:
-                Log(ClientPatcher.PatchForceEntwell(bytes).Log);
-                break;
-            case EntryPatchMode.None:
-                Log("No parameter patch: exe is unmodified on the entry path.");
-                break;
-        }
+        var loginResult = ClientPatcher.PatchNoArgToPasswordLogin(bytes);
+        Log(loginResult.Log);
+        if (!loginResult.Success) return;
 
         var stubResult = ClientPatcher.PatchImportName(bytes);
         Log(stubResult.Log);
