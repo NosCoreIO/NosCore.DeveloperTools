@@ -1,5 +1,3 @@
-using NosCore.ClientTools;
-
 namespace NosCore.DeveloperTools.Models;
 
 public sealed class AppSettings
@@ -46,8 +44,6 @@ public sealed class ClientCreatorSettings
     public string ClientExePath { get; set; } = string.Empty;
 
     public string OutputName { get; set; } = string.Empty;
-
-    public EntryPatchMode EntryPatchMode { get; set; } = EntryPatchMode.DefaultToEntwell;
 }
 
 public sealed class PacketFilters

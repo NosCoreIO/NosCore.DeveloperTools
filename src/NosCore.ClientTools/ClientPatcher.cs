@@ -5,17 +5,9 @@ namespace NosCore.ClientTools;
 /// <summary>
 /// In-place byte patches against the Gameforge NosTale client
 /// (<c>NostaleClientX.exe</c>): rewrites the embedded login-server
-/// address, neutralises the argc gate so no-arg launches don't exit,
-/// and defaults unknown args into the Entwell standalone body while
-/// leaving the <c>gf</c> / <c>gftest</c> GF-mode branches untouched.
+/// address, sends no-argument launches to the password login and
+/// points the Gameforge wrapper import at our stub.
 /// </summary>
-public enum EntryPatchMode
-{
-    DefaultToEntwell,
-    OnlyEntwell,
-    None,
-}
-
 public static class ClientPatcher
 {
     public sealed record PatchResult(bool Success, string Log);
@@ -111,126 +103,41 @@ public static class ClientPatcher
     }
 
     /// <summary>
-    /// Make the client default to its "EntwellNostaleClient" standalone
-    /// path regardless of the command-line argument. Leaves the `gf` /
-    /// `gftest` branches intact so those still route to GF mode when the
-    /// real Gameforge launcher drives the exe.
+    /// The entry point exits when <c>ParamCount - 1 &lt; 0</c> (<c>JL rel32</c>).
+    /// Retarget that jump to the body shared by every login mode, so a launch
+    /// without arguments reaches it with the Steam and GF flags still zero,
+    /// which is the password (<c>EntwellNostaleClient</c>) login. Launches with
+    /// an argument never take the jump and keep the original dispatch, so
+    /// <c>gf &lt;N&gt;</c> still works. Nothing is skipped half way, so the stack
+    /// stays balanced and the client exits cleanly.
     ///
-    /// Anchor signature (30 bytes, 3 absolute addresses wildcarded):
-    ///
-    ///   B9 14 00 00 00  BA 01 00 00 00  E8 ?? ?? ?? ??   ; mov ecx,14 / mov edx,1 / call
-    ///   8B 45 CC  BA ?? ?? ?? ??  E8 ?? ?? ?? ??          ; load arg / load "EntwellNostaleClient" / call cmp
-    ///   0F 85                                              ; JNZ rel32 (6 bytes with the rel32 following)
-    ///
-    /// An earlier version NOPped just the JNZ so mismatches fell through
-    /// into the Entwell body, but the two <c>call</c>s before the JNZ have
-    /// side effects (ref-counted AnsiString setup + case-folded compare)
-    /// that the match-case naturally balances at shutdown and the
-    /// fall-through case doesn't — producing a timing-sensitive
-    /// <c>EOSError 1400 / Invalid window handle</c> on close.
-    ///
-    /// Instead, skip the whole compare block: overwrite bytes
-    /// [pattern_start, pattern_start+34) — pattern + trailing JNZ rel32 —
-    /// with a short <c>JMP +32</c> and NOP padding, landing exactly on the
-    /// first instruction of the Entwell body. The side-effectful calls
-    /// never run on our path, so shutdown balances cleanly.
+    /// The shared body starts 34 bytes after the <c>EntwellNostaleClient</c>
+    /// compare anchor (<c>Copy(ParamStr(1), 1, 20)</c>, compare, <c>JNZ rel32</c>).
     /// </summary>
-    public static PatchResult PatchDefaultToEntwell(byte[] bytes)
+    public static PatchResult PatchNoArgToPasswordLogin(byte[] bytes)
     {
-        const string pattern =
-            "B9 14 00 00 00 BA 01 00 00 00 E8 ? ? ? ? 8B 45 CC BA ? ? ? ? E8 ? ? ? ? 0F 85";
-
-        var offset = FindPattern(bytes, pattern, 0);
-        if (offset < 0)
-        {
-            return new PatchResult(false, "Default-to-Entwell pattern not found.");
-        }
-
-        // EB 20 = short JMP, rel8 = +32, so next_ip (offset+2) + 32 = offset+34
-        // which is the first byte after the original JNZ rel32 = Entwell body entry.
-        bytes[offset + 0] = 0xEB;
-        bytes[offset + 1] = 0x20;
-        for (var i = 2; i < 34; i++) bytes[offset + i] = 0x90;
-
-        return new PatchResult(true,
-            $"Default-to-Entwell: JMP +32 over compare block at 0x{offset:X} — any non-gf/gftest launch skips straight into the Entwell body.");
-    }
-
-    /// <summary>
-    /// Force the client into the Entwell standalone body unconditionally,
-    /// regardless of command-line args. Replaces the early-entry argc
-    /// <c>JL</c> with an unconditional <c>JMP</c> straight to the Entwell
-    /// body (located via the <see cref="PatchDefaultToEntwell"/> pattern
-    /// + 34). Skips the <c>gf</c> / <c>gftest</c> / <c>EntwellNostaleClient</c>
-    /// compares entirely — so <c>gf</c> mode stops working — but avoids
-    /// the timing-sensitive shutdown crash that both NOP-and-JMP variants
-    /// of <see cref="PatchDefaultToEntwell"/> trigger when any of those
-    /// compares runs beforehand.
-    /// </summary>
-    public static PatchResult PatchForceEntwell(byte[] bytes)
-    {
-        const string entwellPattern =
+        const string loginBodyPattern =
             "B9 14 00 00 00 BA 01 00 00 00 E8 ? ? ? ? 8B 45 CC BA ? ? ? ? E8 ? ? ? ? 0F 85";
         const string argcPattern = "E8 ? ? ? ? E8 ? ? ? ? 48 0F 8C";
 
-        var entwellBlock = FindPattern(bytes, entwellPattern, 0);
-        if (entwellBlock < 0)
+        var compareBlock = FindPattern(bytes, loginBodyPattern, 0);
+        if (compareBlock < 0)
         {
-            return new PatchResult(false, "Force-Entwell: default-to-Entwell anchor pattern not found.");
+            return new PatchResult(false, "No-arg login: login mode compare pattern not found.");
         }
         var argcBlock = FindPattern(bytes, argcPattern, 0);
         if (argcBlock < 0)
         {
-            return new PatchResult(false, "Force-Entwell: argc-gate anchor pattern not found.");
+            return new PatchResult(false, "No-arg login: argc check pattern not found.");
         }
 
-        var entwellBody = entwellBlock + 34;
+        var loginBody = compareBlock + 34;
         var jlOffset = argcBlock + 11;
-        // Overwrite `0F 8C rel32` (6 bytes) with `E9 rel32 90` (JMP rel32 + NOP).
-        var rel32 = entwellBody - (jlOffset + 5);
-        bytes[jlOffset + 0] = 0xE9;
-        bytes[jlOffset + 1] = (byte)rel32;
-        bytes[jlOffset + 2] = (byte)(rel32 >> 8);
-        bytes[jlOffset + 3] = (byte)(rel32 >> 16);
-        bytes[jlOffset + 4] = (byte)(rel32 >> 24);
-        bytes[jlOffset + 5] = 0x90;
+        var rel32 = loginBody - (jlOffset + 6);
+        WriteInt32LittleEndian(bytes, jlOffset + 2, rel32);
 
         return new PatchResult(true,
-            $"Force-Entwell: JMP at 0x{jlOffset:X} → Entwell body 0x{entwellBody:X} (rel32=0x{rel32:X}). `gf` mode will no longer work.");
-    }
-
-    /// <summary>
-    /// Neutralise the early-entry argc gate: the entry point calls
-    /// <c>ParamCount()</c>, decrements it, and on a negative result
-    /// <c>JL</c>s to the cleanup/exit path. Without a patch this means
-    /// double-click (no-arg) launches bail out.
-    ///
-    /// Signature (13 bytes, 2 calls wildcarded):
-    ///   E8 ?? ?? ?? ??   ; call ParamStr-ish helper
-    ///   E8 ?? ?? ?? ??   ; call ParamCount
-    ///   48                ; dec eax
-    ///   0F 8C            ; JL — we overwrite these + the rel32 below
-    ///
-    /// NOPping the 6-byte <c>JL rel32</c> at pattern offset 11 lets
-    /// execution flow into the arg dispatcher regardless of argc, which
-    /// combined with <see cref="PatchDefaultToEntwell"/> drops any
-    /// unknown arg into the Entwell body. <c>gf</c> / <c>gftest</c>
-    /// branches remain fully functional.
-    /// </summary>
-    public static PatchResult PatchAllowNoArg(byte[] bytes)
-    {
-        const string pattern = "E8 ? ? ? ? E8 ? ? ? ? 48 0F 8C";
-        var offset = FindPattern(bytes, pattern, 0);
-        if (offset < 0)
-        {
-            return new PatchResult(false, "Allow-no-arg pattern not found.");
-        }
-
-        var jlOffset = offset + 11;
-        for (var i = 0; i < 6; i++) bytes[jlOffset + i] = 0x90;
-
-        return new PatchResult(true,
-            $"Allow-no-arg: NOPped JL at 0x{jlOffset:X} — the argc gate no longer aborts on zero-arg launches.");
+            $"No-arg login: JL at 0x{jlOffset:X} now targets the login body at 0x{loginBody:X}; launches without arguments open the password login, gf launches are unchanged.");
     }
 
     /// <summary>
