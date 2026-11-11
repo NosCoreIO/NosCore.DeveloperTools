@@ -6,7 +6,7 @@
 
 [![.NET](https://github.com/NosCoreIO/NosCore.DeveloperTools/actions/workflows/dotnet.yml/badge.svg?branch=master)](https://github.com/NosCoreIO/NosCore.DeveloperTools/actions/workflows/dotnet.yml)
 
-Early-stage (`0.0.1`) developer tools for NosTale / NosCore. WinForms on .NET 10, runs as 32-bit to match the NosTale client, parses packets with [NosCore.Packets](https://github.com/NosCoreIO/NosCore.Packets). Ships as a single self-contained `.exe`.
+Early-stage (`0.0.1`) developer tools for NosTale / NosCore. WinForms on .NET 11, runs as 32-bit to match the NosTale client, parses packets with [NosCore.Packets](https://github.com/NosCoreIO/NosCore.Packets). Ships as a single self-contained `.exe`.
 
 ## Warning! ##
 We are not responsible of any damages caused by bad usage of our source. Please before asking questions or installing this source read this readme and also do a research, google is your friend. If you mess up when installing our source because you didnt follow it, we will laugh at you. A lot.
@@ -60,7 +60,7 @@ For a walkthrough of the exact recipe we used (via x32dbg + the x64dbg MCP, trac
 
 ## Build ##
 
-Requires .NET 10 SDK.
+Requires .NET 11 SDK.
 
 ```
 dotnet build
