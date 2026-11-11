@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <RootNamespace>NosCore.ClientTools</RootNamespace>
     <AssemblyName>NosCore.ClientTools</AssemblyName>
     <!-- No injection here, so no bitness constraint: consumers of this
@@ -24,7 +24,7 @@
 
   <PropertyGroup>
     <GfStubProjectPath>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.GfStub\NosCore.DeveloperTools.GfStub.csproj</GfStubProjectPath>
-    <GfStubPublishDir>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.GfStub\bin\$(Configuration)\net10.0\win-x86\publish\</GfStubPublishDir>
+    <GfStubPublishDir>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.GfStub\bin\$(Configuration)\net11.0\win-x86\publish\</GfStubPublishDir>
     <GfStubDllPath>$(GfStubPublishDir)noscore_gf.dll</GfStubDllPath>
   </PropertyGroup>
 

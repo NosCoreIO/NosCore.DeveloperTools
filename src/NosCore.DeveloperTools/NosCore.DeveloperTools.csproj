@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net11.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>NosCore.DeveloperTools</RootNamespace>
     <AssemblyName>NosCore.DeveloperTools</AssemblyName>
@@ -46,7 +46,7 @@
 
   <PropertyGroup>
     <HookProjectPath>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.Hook\NosCore.DeveloperTools.Hook.csproj</HookProjectPath>
-    <HookPublishDir>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.Hook\bin\$(Configuration)\net10.0\win-x86\publish\</HookPublishDir>
+    <HookPublishDir>$(MSBuildThisFileDirectory)..\NosCore.DeveloperTools.Hook\bin\$(Configuration)\net11.0\win-x86\publish\</HookPublishDir>
     <HookDllPath>$(HookPublishDir)NosCore.DeveloperTools.Hook.dll</HookDllPath>
   </PropertyGroup>
 
