@@ -1,20 +1,21 @@
-# NosCore.DeveloperTools #
-
 <p align="center">
-  <img width="250px" src="https://github.com/NosCoreIO/NosCore.Packets/blob/15.0.1/icon.png?raw=true"/>
+  <img width="200" alt="NosCore" src="icon.png"/>
 </p>
 
-[![.NET](https://github.com/NosCoreIO/NosCore.DeveloperTools/actions/workflows/dotnet.yml/badge.svg?branch=master)](https://github.com/NosCoreIO/NosCore.DeveloperTools/actions/workflows/dotnet.yml)
+<h1 align="center">NosCore.DeveloperTools</h1>
 
-Early-stage (`0.0.1`) developer tools for NosTale / NosCore. WinForms on .NET 11, runs as 32-bit to match the NosTale client, parses packets with [NosCore.Packets](https://github.com/NosCoreIO/NosCore.Packets). Ships as a single self-contained `.exe`.
+<p align="center">
+  <a href="https://github.com/NosCoreIO/NosCore.DeveloperTools/actions/workflows/dotnet.yml"><img alt="Build" src="https://github.com/NosCoreIO/NosCore.DeveloperTools/actions/workflows/dotnet.yml/badge.svg?branch=master"/></a>
+  <a href="https://discord.gg/Eu3ETSw"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?style=flat-square&logo=discord&logoColor=white"/></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/></a>
+</p>
 
-## Warning! ##
-We are not responsible of any damages caused by bad usage of our source. Please before asking questions or installing this source read this readme and also do a research, google is your friend. If you mess up when installing our source because you didnt follow it, we will laugh at you. A lot.
+Developer tools for NosTale and NosCore: a packet logger that hooks a running client, and a client creator that
+points a copy of the client at your own server. WinForms on .NET 11, 32-bit to match the client, packets parsed with
+[NosCore.Packets](https://github.com/NosCoreIO/NosCore.Packets). Ships as a single self-contained `.exe`; still at
+`0.0.1`.
 
-## Legal ##
-This is an independent and unofficial tool for educational use ONLY. Using the Project might be against the TOS of any NosTale server you connect to. Use at your own risk.
-
-## Tools ##
+## Tools
 
 ### Packet Logger
 - `File → Select process` (Ctrl+P): UAC-elevated launch, process selector with substring filter, remembers the last-used name, hides same-name child processes.
@@ -30,7 +31,7 @@ Point it at a copy of `NostaleClientX.exe`, pick a new server address and output
 2. **Double-click opens the password login** — the entry point calls `ParamCount`, decrements, and `JL`s to the exit path on a negative result. We retarget that `JL` to the body every login mode shares, so a launch without arguments reaches it with the Steam and GF flags still zero, which is the `EntwellNostaleClient` password login. Launches with an argument never take the jump, so `gf <N>` (what the Auth tab's **Sign in & launch** passes) still goes through the auth-code login.
 3. **Gameforge wrapper stub** — the `gf_wrapper.dll` import is renamed to `noscore_gf.dll`, which is written next to the patched exe and hands the client the `_NC_AUTH_CODE` from the Auth tab.
 
-## ⚠️ Windows Defender
+## Windows Defender
 
 The remote-thread injection path triggers Defender's generic MSIL heuristic
 `Trojan:MSIL/TurtleLoader` — false positive matching any .NET assembly that
@@ -58,7 +59,7 @@ Byte-pattern signatures for the send/recv entry points live in [src/NosCore.Deve
 
 For a walkthrough of the exact recipe we used (via x32dbg + the x64dbg MCP, tracing from `ws2_32.*` into the connection object's virtual handler slots), see [docs/finding-hooks.md](docs/finding-hooks.md). Re-run that process any time a client patch invalidates an existing signature or you need to instrument a new phase of the client (character select, a subsystem, etc.).
 
-## Build ##
+## Building
 
 Requires .NET 11 SDK.
 
@@ -74,15 +75,32 @@ dotnet publish src/NosCore.DeveloperTools -c Release -r win-x86 --self-contained
 
 Output: `./publish/NosCore.DeveloperTools.exe`.
 
-## Contributing ##
+## Contributing
 
-Discord: [NosCore community](https://discord.gg/Eu3ETSw).
+Questions, ideas and pull requests are welcome; most of the discussion happens on [Discord](https://discord.gg/Eu3ETSw).
+It targets Windows only, since it works on the NosTale client's process. Any editor that handles .NET 11 works.
+In Visual Studio, [Roslynator](https://github.com/dotnet/roslynator) and
+[ReSharper](https://www.jetbrains.com/resharper/) help keep to the code style.
 
-Disclaimer: this is a community project not for commercial use. The result is to learn and program together for prove the study.
+## Supporting NosCore
 
-Contribution is only possible with Visual Studio 2026 or an equivalent IDE.
+NosCore is a spare-time open source project. Sponsoring buys time spent on the emulator and the packages around it,
+and gives the **Supporter** role on Discord.
 
-## You like our work? ##
-<a href='https://github.com/sponsors/0Lucifer0' target='_blank'><img height='46' src='https://i.gyazo.com/47b2ca2eb6e1ce38d02b04c410e1c82a.png' alt='Sponsor me!'/></a>
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/A3562BQV)
-<a href='https://www.patreon.com/bePatron?u=6503887' target='_blank'><img height='46' src='https://c5.patreon.com/external/logo/become_a_patron_button@2x.png' alt='Become a Patron!'/></a>
+<p>
+  <a href="https://github.com/sponsors/0Lucifer0"><img alt="Sponsor on GitHub" src="https://img.shields.io/badge/GitHub-sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white"/></a>
+  <a href="https://ko-fi.com/A3562BQV"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/Ko--fi-support-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white"/></a>
+  <a href="https://www.patreon.com/bePatron?u=6503887"><img alt="Become a patron" src="https://img.shields.io/badge/Patreon-become_a_patron-F96854?style=for-the-badge&logo=patreon&logoColor=white"/></a>
+</p>
+
+Thanks to [Navicat](https://www.navicat.com) for supporting the project.
+
+<a href="https://www.navicat.com"><img height="60" alt="Navicat" src="https://user-images.githubusercontent.com/35202750/207230064-dcf23adc-9e96-4481-9a53-cd212f5bd60e.png"/></a>
+
+## Legal
+
+NosCore is an independent, unofficial project for educational use. It is not affiliated with, authorized, maintained,
+sponsored or endorsed by Gameforge or any of its affiliates; NosTale is a trademark of Gameforge. Using it may be
+against the terms of service of NosTale servers.
+
+Released under the [MIT License](LICENSE).
