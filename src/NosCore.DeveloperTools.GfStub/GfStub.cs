@@ -17,7 +17,7 @@ namespace NosCore.DeveloperTools.GfStub;
 /// verbatim, and NosCore's AuthHub resolves it via <c>Guid.TryParse</c> — so
 /// sending the 16 raw bytes instead would break server-side parsing. The
 /// <c>InstallationId</c> registry key is seeded so NoS0577 doesn't reject a
-/// NONE_CII value.
+/// NONE_CII value, reusing the official Gameforge client's id when one exists.
 /// </summary>
 internal static unsafe class GfStub
 {
@@ -104,18 +104,27 @@ internal static unsafe class GfStub
     }
 
     private const string InstallKeyPath = @"SOFTWARE\WOW6432Node\Gameforge4d\GameforgeClient\MainApp";
+    private const string UserInstallKeyPath = @"SOFTWARE\Gameforge4d\GameforgeClient\MainApp";
     private const string InstallValueName = "InstallationId";
 
     private static void EnsureInstallationId()
     {
         if (RegReadString(HKEY_LOCAL_MACHINE, InstallKeyPath, InstallValueName) is not null) return;
-        var id = Guid.NewGuid().ToString().ToUpperInvariant();
-        RegWriteString(HKEY_LOCAL_MACHINE, InstallKeyPath, InstallValueName, id);
+        // An unelevated write to the machine key lands in the user's VirtualStore, and the official
+        // Gameforge client (also 32-bit) then reads it ahead of its own per-user id. A freshly minted
+        // id would silently re-register that installation, so reuse the official one when it exists.
+        if (RegReadString(HKEY_CURRENT_USER, UserInstallKeyPath, InstallValueName) is { } official)
+        {
+            RegWriteString(HKEY_LOCAL_MACHINE, InstallKeyPath, InstallValueName, official);
+            return;
+        }
+        RegWriteString(HKEY_LOCAL_MACHINE, InstallKeyPath, InstallValueName, Guid.NewGuid().ToString().ToUpperInvariant());
     }
 
     private const uint KEY_READ = 0x20019;
     private const uint KEY_WRITE = 0x20006;
     private const uint REG_SZ = 1;
+    private static readonly IntPtr HKEY_CURRENT_USER = (IntPtr)unchecked((int)0x80000001);
     private static readonly IntPtr HKEY_LOCAL_MACHINE = (IntPtr)unchecked((int)0x80000002);
 
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
